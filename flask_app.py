@@ -454,7 +454,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
                     ai_results = fresh_dets
             except Exception:
                 pass
-            time.sleep(0.02)
+            time.sleep(0.08 if os.environ.get("RENDER") == "true" else 0.02)
 
     ai_worker_thread = threading.Thread(target=ai_worker_proc, daemon=True)
     ai_worker_thread.start()
@@ -626,7 +626,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
                         }
 
             # 3. Dispatch current crisp frame to AI worker (throttled to avoid CPU thrashing)
-            ai_interval = 4 if os.environ.get("RENDER") == "true" else 3
+            ai_interval = 5 if os.environ.get("RENDER") == "true" else 3
             if f_idx % ai_interval == 0:
                 with ai_lock:
                     if ai_frame is None:
@@ -719,10 +719,11 @@ def _sync_generate_frames(video_source, ref_settings=None):
             if not is_live:
                 work_time = time.time() - t_frame_start
                 sleep_time = frame_interval - work_time
-                if sleep_time > 0.005:
+                min_sleep = 0.015 if os.environ.get("RENDER") == "true" else 0.005
+                if sleep_time > min_sleep:
                     time.sleep(sleep_time)
                 else:
-                    time.sleep(0.005)
+                    time.sleep(min_sleep)
             else:
                 time.sleep(0.002)
 
