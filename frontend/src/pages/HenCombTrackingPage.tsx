@@ -37,7 +37,6 @@ export default function HenCombTrackingPage() {
   const [backendPingStatus, setBackendPingStatus] = useState<'checking' | 'online' | 'sleeping' | 'offline' | null>(null)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const cameraVideoInputRef = useRef<HTMLInputElement>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const recordedChunksRef = useRef<Blob[]>([])
   const recordingTimerRef = useRef<any>(null)
@@ -1715,7 +1714,7 @@ export default function HenCombTrackingPage() {
             Select Stream Source
           </h3>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 20, width: '100%', maxWidth: 950 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 20, width: '100%', maxWidth: 950 }}>
             {/* Card 1: Farm Hen Video Demo */}
             <div
               id="card-farm-hen-demo"
@@ -1732,28 +1731,7 @@ export default function HenCombTrackingPage() {
               </div>
             </div>
 
-            {/* Card 2: Record Live Video with Mobile Camera */}
-            <div
-              id="card-record-video"
-              className="ref-mode-btn"
-              onClick={() => { if (!activeLoadingCard && !isProcessing) cameraVideoInputRef.current?.click() }}
-              style={{ padding: '30px 18px', borderRadius: 16, border: '2px solid rgba(239,68,68,0.4)', background: 'rgba(239,68,68,0.08)', cursor: activeLoadingCard === 'record' ? 'wait' : 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, transition: 'all 0.3s' }}
-            >
-              <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'linear-gradient(135deg,#ef4444,#b91c1c)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 8px 20px rgba(239,68,68,0.4)' }}>
-                {activeLoadingCard === 'record' ? <RefreshCw className="animate-spin" size={28} color="white" /> : <Video size={28} color="white" />}
-              </div>
-              <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary, #1e293b)' }}>
-                  {activeLoadingCard === 'record' ? 'Processing Video...' : 'Record Farm Video'}
-                </div>
-                <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary, #475569)', marginTop: 4 }}>
-                  {activeLoadingCard === 'record' ? (uploadStatusText || 'Processing video on device...') : 'Record video with phone camera & convert to live AI stream'}
-                </div>
-              </div>
-            </div>
-            <input type="file" ref={cameraVideoInputRef} onChange={(e) => handleVideoUpload(e, 'record')} accept="video/*" capture="environment" style={{ display: 'none' }} />
-
-            {/* Card 3: Upload Video File */}
+            {/* Card 2: Upload Video File */}
             <div
               id="card-upload-video"
               className="ref-mode-btn"
@@ -1774,7 +1752,7 @@ export default function HenCombTrackingPage() {
             </div>
             <input type="file" ref={fileInputRef} onChange={(e) => handleVideoUpload(e, 'upload')} accept="video/mp4,video/x-m4v,video/*" style={{ display: 'none' }} />
 
-            {/* Card 4: Live Camera Stream (Real-Time AI Boxes) */}
+            {/* Card 3: Live Camera Stream (Real-Time AI Boxes) */}
             <div
               id="card-live-camera"
               className="ref-mode-btn"
@@ -1787,28 +1765,6 @@ export default function HenCombTrackingPage() {
               <div style={{ textAlign: 'center' }}>
                 <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary, #1e293b)' }}>Live Camera Stream</div>
                 <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary, #475569)', marginTop: 4 }}>Full-screen real-time hen comb tracking directly from phone camera</div>
-              </div>
-            </div>
-
-            {/* Card 5: Laptop Webcam Direct 30 FPS Stream */}
-            <div
-              id="card-laptop-webcam"
-              className="ref-mode-btn"
-              onClick={() => {
-                stopLiveCamera()
-                setErrorMsg(null)
-                const activeBackendUrl = getTrackerBaseUrl()
-                setStreamUrl(`${activeBackendUrl}/stream_video/camera?t=${Date.now()}`)
-                setStreamMode('video')
-              }}
-              style={{ padding: '30px 18px', borderRadius: 16, border: '2px solid rgba(14,165,233,0.4)', background: 'rgba(14,165,233,0.08)', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, transition: 'all 0.3s' }}
-            >
-              <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'linear-gradient(135deg,#0ea5e9,#0284c7)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 8px 20px rgba(14,165,233,0.4)' }}>
-                <Video size={28} color="white" />
-              </div>
-              <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary, #1e293b)' }}>Laptop Webcam (30 FPS)</div>
-                <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary, #475569)', marginTop: 4 }}>Ultra-smooth 30 FPS hardware webcam streaming from laptop</div>
               </div>
             </div>
           </div>
