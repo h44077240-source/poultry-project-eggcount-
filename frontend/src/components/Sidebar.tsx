@@ -5,7 +5,7 @@ import { getInitials } from '../utils/helpers'
 import { useTranslation } from 'react-i18next'
 import {
   LayoutDashboard, Map, Image, Users, Cpu, Blocks,
-  ClipboardList, BarChart2, Settings, Smartphone, LogOut, CheckSquare, MessageCircle, Globe, Plane, Layers
+  ClipboardList, BarChart2, Settings, Smartphone, LogOut, CheckSquare, MessageCircle, Globe, Layers
 } from 'lucide-react'
 
 const navItems = [
@@ -17,7 +17,6 @@ const navItems = [
   { group: 'Management', items: [
     { to: '/users', label: 'Users', icon: Users, adminOnly: true },
     { to: '/devices', label: 'Devices', icon: Smartphone, adminOnly: true },
-    { to: '/drone', label: 'Drone', icon: Plane },
   ]},
   { group: 'Verification', items: [
     { to: '/ai-verification', label: 'AI Verification', icon: Cpu, hideFromRestricted: true },
