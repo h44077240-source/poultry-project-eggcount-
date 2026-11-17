@@ -491,3 +491,15 @@ class Forecast(Base):
     confidence_lower = Column(Float, nullable=True)
     confidence_upper = Column(Float, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class HenCountSession(Base):
+    __tablename__ = "hen_count_sessions"
+    id = Column(String(36), primary_key=True, default=gen_uuid)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    source_type = Column(String(50), nullable=False) # e.g. "UPLOADED_VIDEO", "LIVE_CAMERA", "DEMO_VIDEO"
+    video_filename = Column(String(255), nullable=True)
+    video_duration = Column(Float, default=0.0) # duration in seconds
+    total_count = Column(Integer, default=0)
+    visible_count = Column(Integer, default=0)
+    notes = Column(Text, nullable=True)
+

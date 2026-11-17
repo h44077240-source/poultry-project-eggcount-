@@ -115,8 +115,8 @@ class OpticalHenTracker:
                 results = self.model.predict(
                     source=f,
                     verbose=False,
-                    conf=0.035,
-                    iou=0.40,
+                    conf=0.18,
+                    iou=0.35,
                     imgsz=infer_imgsz,
                     device=self.DEVICE
                 )
@@ -128,9 +128,11 @@ class OpticalHenTracker:
 
                     # Dynamic Zone definition (stored for new-hen gating in process_live_frame)
                     if fw < fh:
-                        self._zone = (int(fw * 0.01), int(fh * 0.02), int(fw * 0.99), int(fh * 0.98))
+                        self._zone = (int(fw * 0.02), int(fh * 0.06), int(fw * 0.75), int(fh * 0.90))
+                        self._zone = (int(fw * 0.02), int(fh * 0.06), int(fw * 0.72), int(fh * 0.90))
                     else:
-                        self._zone = (int(fw * 0.01), int(fh * 0.02), int(fw * 0.99), int(fh * 0.98))
+                        self._zone = (int(fw * 0.04), int(fh * 0.08), int(fw * 0.96), int(fh * 0.88))
+                        self._zone = (int(fw * 0.04), int(fh * 0.08), int(fw * 0.96), int(fh * 0.88))
 
                     max_comb_w = max(60, int(fw * (0.35 if fw < fh else 0.18)))
                     max_comb_h = max(60, int(fh * (0.22 if fw < fh else 0.22)))
@@ -140,8 +142,8 @@ class OpticalHenTracker:
                     h_ch, s_ch, v_ch = cv2.split(hsv)
                     b_ch, g_ch, r_ch = cv2.split(f.astype(np.float32))
                     comb_red = (
-                        (((h_ch >= 150) | (h_ch <= 15)) & (s_ch > 32) & (v_ch > 40) & ((r_ch - g_ch) > 12)) |
-                        (((r_ch - np.maximum(g_ch, b_ch)) > 15) & (s_ch > 30) & (v_ch > 45))
+                        (((h_ch >= 168) | (h_ch <= 8)) & (s_ch > 45) & (v_ch > 45) & ((r_ch - g_ch) > 20) & ((r_ch - b_ch) > 20)) |
+                        (((r_ch - np.maximum(g_ch, b_ch)) > 25) & (s_ch > 50) & (v_ch > 50))
                     )
 
                     for box, conf in zip(boxes, confs):
@@ -153,7 +155,12 @@ class OpticalHenTracker:
                         if hw > max_comb_w or hh > max_comb_h or (hw * hh) > max_area:
                             continue
 
-                        crop_red = comb_red[y1:y2, x1:x2]
+                        # If box covers whole hen, search top 35% where the comb crest is located
+                        search_hh = hh * 0.35 if hh > 100 else hh
+                        crop_red = comb_red[y1:min(fh - 1, int(y1 + search_hh)), x1:x2]
+                        if np.count_nonzero(crop_red) < 15:
+                            continue
+
                         ys, xs = np.where(crop_red)
                         scale_factor = max(fw, fh) / 640.0
                         if len(xs) >= 6:
@@ -161,11 +168,20 @@ class OpticalHenTracker:
                             cy = y1 + float(np.median(ys))
                             w_comb = float(np.percentile(xs, 90) - np.percentile(xs, 10))
                             h_comb = float(np.percentile(ys, 90) - np.percentile(ys, 10))
-                            base_sz = max(24.0 * scale_factor, min(38.0 * scale_factor, max(w_comb, h_comb) + 6.0))
+                            base_sz = max(24.0 * scale_factor, min(34.0 * scale_factor, max(w_comb, h_comb) + 4.0))
                         else:
                             cx = (x1 + x2) / 2.0
                             cy = (y1 + y2) / 2.0
-                            base_sz = max(24.0 * scale_factor, min(38.0 * scale_factor, max(hw, hh) + 4.0))
+                            base_sz = max(24.0 * scale_factor, min(34.0 * scale_factor, max(hw, hh) + 4.0))
+
+                        # Biological red prominence check (rejects brown feathers)
+                        rx1, ry1 = max(0, int(cx - 10)), max(0, int(cy - 10))
+                        rx2, ry2 = min(fw, int(cx + 10)), min(fh, int(cy + 10))
+                        bgr_crop = f[ry1:ry2, rx1:rx2].astype(np.float32)
+                        b_m, g_m, r_m = np.mean(bgr_crop[:, :, 0]), np.mean(bgr_crop[:, :, 1]), np.mean(bgr_crop[:, :, 2])
+                        red_prom = r_m - max(b_m, g_m)
+                        if red_prom < 20.0 or (r_m / (max(b_m, g_m) + 1e-4)) < 1.20:
+                            continue
 
                         hw_box = base_sz / 2.0
                         hh_box = base_sz / 2.0
@@ -197,12 +213,10 @@ class OpticalHenTracker:
                 kept_dets = []
                 for d in raw_dets:
                     c1 = d["center"]
-                    diag1 = d["diag"]
                     overlap = False
                     for ex in kept_dets:
                         c2 = ex["center"]
-                        diag2 = ex["diag"]
-                        if math.hypot(c1[0] - c2[0], c1[1] - c2[1]) < min(diag1, diag2) * 0.40 or math.hypot(c1[0] - c2[0], c1[1] - c2[1]) < 22:
+                        if math.hypot(c1[0] - c2[0], c1[1] - c2[1]) < 48.0:
                             overlap = True
                             break
                     if not overlap:
@@ -253,8 +267,8 @@ class OpticalHenTracker:
                     init_res = self.model.predict(
                         source=frame,
                         verbose=False,
-                        conf=0.025,
-                        iou=0.45,
+                        conf=0.18,
+                        iou=0.35,
                         imgsz=init_imgsz,
                         device=self.DEVICE
                     )
@@ -265,32 +279,42 @@ class OpticalHenTracker:
                         h_ch, s_ch, v_ch = cv2.split(hsv)
                         b_ch, g_ch, r_ch = cv2.split(frame.astype(np.float32))
                         comb_red = (
-                            (((h_ch >= 150) | (h_ch <= 15)) & (s_ch > 32) & (v_ch > 40) & ((r_ch - g_ch) > 12)) |
-                            (((r_ch - np.maximum(g_ch, b_ch)) > 15) & (s_ch > 30) & (v_ch > 45))
+                            (((h_ch >= 168) | (h_ch <= 8)) & (s_ch > 45) & (v_ch > 45) & ((r_ch - g_ch) > 20) & ((r_ch - b_ch) > 20)) |
+                            (((r_ch - np.maximum(g_ch, b_ch)) > 25) & (s_ch > 50) & (v_ch > 50))
                         )
                         init_candidates = []
                         scale_factor = max(fw, fh) / 640.0
                         for box, conf in zip(boxes, confs):
                             x1, y1, x2, y2 = map(int, box)
-                            x1, y1 = max(0, min(fw - 1, x1)), max(0, min(fh - 1, y1))
-                            x2, y2 = max(0, min(fw - 1, x2)), max(0, min(fh - 1, y2))
-                            crop_red = comb_red[y1:y2, x1:x2]
+                            hw = x2 - x1
+                            hh = y2 - y1
+                            if hw < 8 or hh < 8:
+                                continue
+                            search_hh = hh * 0.35 if hh > 100 else hh
+                            crop_red = comb_red[y1:min(fh - 1, int(y1 + search_hh)), x1:x2]
                             comb_px = np.count_nonzero(crop_red)
-                            if comb_px < 14:
+                            if comb_px < 15:
                                 continue
                             ys, xs = np.where(crop_red)
                             if len(xs) >= 10:
                                 cx = x1 + float(np.median(xs))
                                 cy = y1 + float(np.median(ys))
+                                rx1, ry1 = max(0, int(cx - 10)), max(0, int(cy - 10))
+                                rx2, ry2 = min(fw, int(cx + 10)), min(fh, int(cy + 10))
+                                bgr_crop = frame[ry1:ry2, rx1:rx2].astype(np.float32)
+                                b_m, g_m, r_m = np.mean(bgr_crop[:, :, 0]), np.mean(bgr_crop[:, :, 1]), np.mean(bgr_crop[:, :, 2])
+                                red_prom = r_m - max(b_m, g_m)
+                                if red_prom < 20.0 or (r_m / (max(b_m, g_m) + 1e-4)) < 1.20:
+                                    continue
                                 w_comb = float(np.percentile(xs, 90) - np.percentile(xs, 10))
                                 h_comb = float(np.percentile(ys, 90) - np.percentile(ys, 10))
-                                base_sz = max(26.0 * scale_factor, min(38.0 * scale_factor, max(w_comb, h_comb) + 6.0))
-                                hw, hh = base_sz / 2.0, base_sz / 2.0
+                                base_sz = max(24.0 * scale_factor, min(34.0 * scale_factor, max(w_comb, h_comb) + 4.0))
+                                hw_b, hh_b = base_sz / 2.0, base_sz / 2.0
                                 box_final = [
-                                    max(0.0, float(cx - hw)),
-                                    max(0.0, float(cy - hh)),
-                                    min(float(fw - 1), float(cx + hw)),
-                                    min(float(fh - 1), float(cy + hh))
+                                    max(0.0, float(cx - hw_b)),
+                                    max(0.0, float(cy - hh_b)),
+                                    min(float(fw - 1), float(cx + hw_b)),
+                                    min(float(fh - 1), float(cy + hh_b))
                                 ]
                                 init_candidates.append({
                                     "box": box_final,
@@ -401,7 +425,7 @@ class OpticalHenTracker:
                     return z[0] <= x <= z[2] and z[1] <= y <= z[3]
 
                 # Stage 1: Match active and remembered tracks with stable radius
-                MAX_LOST_MEMORY = 30
+                MAX_LOST_MEMORY = 60
                 active_matches = []
                 for det_idx, det in enumerate(fresh):
                     cx, cy = det["center"]
@@ -416,8 +440,8 @@ class OpticalHenTracker:
                         pred_hy = hy + vy * min(hdata["lost"], 3)
                         dist = min(math.hypot(cx - hx, cy - hy), math.hypot(cx - pred_hx, cy - pred_hy))
                         iou = _box_iou(hdata["box"], det["box"])
-                        max_match = 50.0  # Stable radius to keep ID locked to hen
-                        if iou >= 0.15 or dist <= max_match:
+                        max_match = 55.0  # Stable radius to keep ID locked to hen
+                        if iou >= 0.12 or dist <= max_match:
                             cost = (1.0 - iou) * 0.4 + (dist / max_match) * 0.6
                             active_matches.append((cost, det_idx, hid))
 
@@ -454,8 +478,9 @@ class OpticalHenTracker:
                         hdata["lost"] += 1
 
                 # Stage 2: Register New Hen entering the zone (Unique IDs, zero repeats!)
-                min_new_dist = 36.0
-                unmatched_fresh = [det for det_idx, det in enumerate(fresh) if det_idx not in used_dets and det.get("conf", 0.0) >= 0.03]
+                min_new_dist = 48.0
+                unmatched_fresh = [det for det_idx, det in enumerate(fresh) if det_idx not in used_dets and det.get("conf", 0.0) >= 0.18]
+                unmatched_fresh = [det for det_idx, det in enumerate(fresh) if det_idx not in used_dets and det.get("conf", 0.0) >= 0.16]
                 unmatched_fresh.sort(key=lambda d: -d["center"][1])
                 for det in unmatched_fresh:
                     cx, cy = det["center"]
@@ -466,8 +491,8 @@ class OpticalHenTracker:
 
                     # Only block if too close to a known tracked hen (prevents duplicate box on same comb)
                     is_near_active = any(
-                        math.hypot(cx - h["center"][0], cy - h["center"][1]) < min_new_dist or _box_iou(det["box"], h["box"]) > 0.25
-                        for h in self.hens.values() if h["lost"] <= 45
+                        math.hypot(cx - h["center"][0], cy - h["center"][1]) < min_new_dist or _box_iou(det["box"], h["box"]) > 0.20
+                        for h in self.hens.values() if h["lost"] <= 60
                     )
                     if is_near_active:
                         continue
@@ -492,7 +517,7 @@ class OpticalHenTracker:
                 b = self.hens[hid]["box"]
                 cx, cy = self.hens[hid]["center"]
                 left_zone = (z is not None and not (z[0] <= cx <= z[2] and z[1] <= cy <= z[3]))
-                lost_too_long = self.hens[hid]["lost"] > 45
+                lost_too_long = self.hens[hid]["lost"] > 60
                 is_out_of_bounds = (b[2] < 0 or b[0] > fw or b[3] < 0 or b[1] > fh)
                 if left_zone or lost_too_long or is_out_of_bounds:
                     del self.hens[hid]
@@ -507,7 +532,8 @@ class OpticalHenTracker:
             z = getattr(self, '_zone', None)
             candidates = [
                 hid for hid, d in self.hens.items()
-                if d["lost"] <= 2 and d.get("hits", 0) >= 1 and (z is None or (z[0] <= d["center"][0] <= z[2] and z[1] <= d["center"][1] <= z[3])) and d["box"][1] > 6
+                if d["lost"] <= 2 and (d.get("hits", 0) >= 2 or d.get("conf", 0) >= 0.22) and (z is None or (z[0] <= d["center"][0] <= z[2] and z[1] <= d["center"][1] <= z[3])) and d["box"][1] > 6
+                if d["lost"] <= 2 and (d.get("hits", 0) >= 2 or d.get("initial", False) or d.get("conf", 0) >= 0.22) and (z is None or (z[0] <= d["center"][0] <= z[2] and z[1] <= d["center"][1] <= z[3])) and d["box"][1] > 6
             ]
             candidates.sort(key=lambda hid: (-self.hens[hid].get("hits", 0), self.hens[hid]["lost"]))
 

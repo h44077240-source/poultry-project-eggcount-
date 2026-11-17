@@ -16,21 +16,19 @@ FALLBACK_MODEL_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), ".
 
 def load_model():
     global model, egg_model, tray_model
-    if model is None:
+    if model is None or egg_model is None:
         try:
-            from app.ai.shared_model import get_shared_model
-            model = get_shared_model()
+            if model is None:
+                from app.ai.shared_model import get_shared_model
+                model = get_shared_model()
 
-            # In cloud environments (Render, Heroku, or constrained RAM), use the single shared YOLO model
-            is_cloud = bool(os.environ.get("RENDER") or os.environ.get("PORT"))
-            if is_cloud:
-                print("[AI] Cloud environment detected. Using single shared YOLO model under 512MB RAM.")
-                egg_model = None
-                tray_model = None
-            else:
-                # Dedicated Egg Detection Model on local machines if desired
+            if egg_model is None:
                 egg_candidate_paths = [
                     MODEL_PATH,
+                    os.path.abspath(os.path.join(os.path.dirname(__file__), "models", "egg_detector.pt")),
+                    os.path.abspath(os.path.join(os.path.dirname(__file__), "../../egg_detector.pt")),
+                    os.path.abspath(os.path.join(os.getcwd(), "backend", "egg_detector.pt")),
+                    os.path.abspath(os.path.join(os.getcwd(), "egg_detector.pt")),
                     os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../egg-detection-system/backend/models/egg_detector.pt")),
                 ]
                 egg_chosen = next((p for p in egg_candidate_paths if os.path.exists(p)), None)
@@ -66,7 +64,7 @@ def detect_objects_image(image: np.ndarray, conf_threshold: float = 0.35, iou_th
     Runs YOLO inference on a raw OpenCV image array and returns detection results.
     """
     model_instance, tray_model_instance = load_model()
-    if not model_instance:
+    if not model_instance and not egg_model:
         raise ValueError("Failed to load YOLO model.")
 
     if image is None:
@@ -75,14 +73,23 @@ def detect_objects_image(image: np.ndarray, conf_threshold: float = 0.35, iou_th
     # Run inference for main model with optimal resolution on CPU/Render
     import torch
     target_imgsz = 416 if os.environ.get("RENDER") == "true" or not torch.cuda.is_available() else 640
-    results = model_instance(image, conf=conf_threshold, iou=iou_threshold, imgsz=target_imgsz)
+    results = []
+    if model_instance is not None:
+        try:
+            results = model_instance(image, conf=conf_threshold, iou=iou_threshold, imgsz=target_imgsz)
+        except Exception as e:
+            print(f"[AI] Main model error: {e}")
+            results = []
     
-    # Run inference for eggs if dedicated egg model is available
+    # Run inference for egg/trays using dedicated egg tray model
     egg_results = None
     if egg_model is not None:
         try:
-            egg_results = egg_model(image, conf=conf_threshold, iou=iou_threshold, imgsz=target_imgsz)
-        except Exception:
+            # Use threshold provided, but adapt for egg tray detection down to 0.20 if default is higher
+            eff_conf = min(conf_threshold, 0.20) if conf_threshold > 0.20 else conf_threshold
+            egg_results = egg_model(image, conf=eff_conf, iou=iou_threshold, imgsz=target_imgsz)
+        except Exception as e:
+            print(f"[AI] Dedicated egg detector error: {e}")
             egg_results = None
 
     # Run inference for trays if needed
@@ -110,10 +117,10 @@ def detect_objects_image(image: np.ndarray, conf_threshold: float = 0.35, iou_th
             cls_id = int(box.cls[0].cpu().numpy())
             
             raw_class_name = class_names.get(cls_id, "unknown").lower()
-            if is_egg_only or "egg" in raw_class_name:
-                class_name = "egg"
-            elif is_tray_only or "tray" in raw_class_name:
+            if is_tray_only or "tray" in raw_class_name:
                 class_name = "egg_tray"
+            elif is_egg_only or "egg" in raw_class_name:
+                class_name = "egg"
             elif any(k in raw_class_name for k in ("hen", "comb", "bird", "chicken")):
                 class_name = "hen"
             else:
@@ -126,19 +133,19 @@ def detect_objects_image(image: np.ndarray, conf_threshold: float = 0.35, iou_th
             
             if class_name == "egg_tray":
                 tray_count += 1
-                color = (255, 0, 0) # Blue in BGR
-                label = f"TRAY {tray_count}"
+                color = (255, 140, 0) # Clear Cyan/Blue in BGR
+                label = f"EGG TRAY {tray_count} ({int(conf*100)}%)"
                 tray_conf_sum += conf
                 det_id = tray_count
             elif class_name == "hen":
                 hen_count += 1
                 color = (0, 0, 255) # Red in BGR
-                label = f"HEN/COMB {hen_count}"
+                label = f"HEN/COMB {hen_count} ({int(conf*100)}%)"
                 det_id = hen_count
             elif class_name == "egg":
                 egg_count += 1
                 color = (0, 255, 255) # Yellow in BGR
-                label = f"EGG {egg_count}"
+                label = f"EGG {egg_count} ({int(conf*100)}%)"
                 egg_conf_sum += conf
                 det_id = egg_count
             else:
@@ -151,26 +158,26 @@ def detect_objects_image(image: np.ndarray, conf_threshold: float = 0.35, iou_th
                 "bbox": [x, y, x + width, y + height]
             })
             
-            thickness = max(2, int(image.shape[0] * 0.002))
+            thickness = max(2, int(image.shape[0] * 0.003))
             cv2.rectangle(annotated_image, (x, y), (x + width, y + height), color, thickness)
             
             font = cv2.FONT_HERSHEY_SIMPLEX
-            font_scale = max(0.5, image.shape[0] * 0.0005)
-            font_thickness = max(1, int(image.shape[0] * 0.001))
+            font_scale = max(0.5, image.shape[0] * 0.0006)
+            font_thickness = max(1, int(image.shape[0] * 0.0015))
             text_size = cv2.getTextSize(label, font, font_scale, font_thickness)[0]
-            cv2.rectangle(annotated_image, (x, y - text_size[1] - 5), (x + text_size[0], y), color, -1)
-            cv2.putText(annotated_image, label, (x, y - 5), font, font_scale, (255, 255, 255), font_thickness)
+            cv2.rectangle(annotated_image, (x, max(0, y - text_size[1] - 8)), (x + text_size[0] + 6, max(text_size[1] + 8, y)), color, -1)
+            cv2.putText(annotated_image, label, (x + 3, max(text_size[1] + 2, y - 5)), font, font_scale, (255, 255, 255), font_thickness)
 
-    # Process main model results
+    # Process main model results (Hen Comb)
     for result in results:
         class_names = getattr(result, "names", {0: "HEN_COMB"})
         process_boxes(result.boxes, class_names)
 
-    # Process dedicated egg model results if present
+    # Process dedicated egg/tray model results
     if egg_results:
         for result in egg_results:
-            class_names = getattr(result, "names", {0: "egg"})
-            process_boxes(result.boxes, class_names, is_egg_only=True)
+            class_names = getattr(result, "names", {0: "egg_tray"})
+            process_boxes(result.boxes, class_names)
         
     # Process tray model results if present
     if tray_results:
@@ -184,18 +191,21 @@ def detect_objects_image(image: np.ndarray, conf_threshold: float = 0.35, iou_th
     avg_tray_conf = (tray_conf_sum / max(1, tray_count)) if tray_count > 0 else 0.0
     avg_egg_conf = (egg_conf_sum / max(1, egg_count)) if egg_count > 0 else 0.0
     
-    # Use tray confidence by default, fallback to egg if it's the only thing detected
     final_conf = avg_tray_conf if tray_count > 0 else avg_egg_conf
+    expected_eggs = tray_count * 30
+    final_egg_count = egg_count if (egg_count > 0 and egg_count != expected_eggs) else expected_eggs
+    missing_eggs = max(0, expected_eggs - egg_count) if (egg_count > 0 and expected_eggs > egg_count) else 0
     
     return {
         "success": True,
         "tray_count": tray_count,
         "hen_count": hen_count,
-        "egg_count": egg_count,
+        "egg_count": final_egg_count,
+        "expected_egg_count": expected_eggs,
+        "missing_egg_count": missing_eggs,
         "confidence": round(final_conf, 3),
         "detections": detections,
-        "result_image": encoded_img,
-        "annotated_frame": annotated_image # useful for live stream drawing
+        "result_image": encoded_img
     }
 
 def detect_objects(image_bytes: bytes, conf_threshold: float = 0.35, iou_threshold: float = 0.45) -> dict:

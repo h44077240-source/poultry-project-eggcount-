@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 class CustomYOLODetector(ImageDetector):
     """
-    Egg & tray counter using local YOLO model.
+    Egg & tray counter using local trained YOLO model.
     Implements the ImageDetector interface for drop-in replacement.
     """
 
@@ -17,31 +17,44 @@ class CustomYOLODetector(ImageDetector):
         Send the image to YOLO service and return a structured count result.
         """
         try:
-            results = detect_objects(image_bytes)
+            results = detect_objects(image_bytes, conf_threshold=0.20)
             
-            # Map YOLO output to EggAnalysisResponse schema
+            tray_count = results.get("tray_count", 0)
+            detected_eggs = results.get("egg_count", 0)
+            expected_eggs = results.get("expected_egg_count", tray_count * 30)
+            missing_eggs = results.get("missing_egg_count", 0)
+            
+            if target == "trays":
+                egg_count = detected_eggs if (detected_eggs > 0 and detected_eggs != expected_eggs) else expected_eggs
+            elif target == "eggs":
+                egg_count = detected_eggs if detected_eggs > 0 else expected_eggs
+            else:
+                egg_count = 0
+
             conf_val = results.get("confidence", 0.0)
-            if conf_val > 0.7:
+            if conf_val > 0.5:
                 confidence_str = "high"
-            elif conf_val > 0.4:
+            elif conf_val > 0.15:
                 confidence_str = "medium"
             else:
                 confidence_str = "low"
                 
             return {
                 "success": True,
-                "egg_count": results.get("egg_count", 0),
-                "tray_count": results.get("tray_count", 0),
+                "egg_count": egg_count,
+                "tray_count": tray_count,
+                "expected_egg_count": expected_eggs,
+                "missing_egg_count": missing_eggs,
                 "hen_count": results.get("hen_count", 0),
                 "tray_types": {
-                    "green_plastic": 0,
+                    "green_plastic": tray_count,
                     "paper_cardboard": 0,
                     "other": 0,
-                    "unknown": results.get("tray_count", 0)
+                    "unknown": 0
                 },
                 "confidence": confidence_str,
                 "image_quality": "good",
-                "notes": "Detected using local YOLO model."
+                "notes": f"Detected {tray_count} egg tray(s) ({egg_count} eggs) using trained YOLO model."
             }
         except Exception as exc:
             logger.error("YOLO detection error: %s", exc, exc_info=True)
@@ -51,42 +64,53 @@ class CustomYOLODetector(ImageDetector):
         """
         Conversational chat analysis. Since YOLO is not a LLM, we return a canned response with counts.
         """
-        analysis = None
         if image_bytes:
             analysis = self.analyze(image_bytes, mime_type)
-            reply = f"Based on the image, I counted {analysis['egg_count']} eggs, {analysis['tray_count']} trays, and {analysis['hen_count']} hens using our local AI model."
+            reply = f"Based on the image, I counted {analysis['tray_count']} egg tray(s) ({analysis['egg_count']} eggs) and {analysis['hen_count']} hens using our trained YOLO model."
+            return {"reply": reply, "analysis": analysis}
         else:
-            reply = "I'm a local object detection model. Please upload an image for me to count eggs or trays."
+            return {"reply": "I'm a local object detection model. Please upload an image for me to count eggs or trays.", "analysis": None}
             
     def analyze_dual(self, top_image_bytes: bytes, side_image_bytes: bytes, mime_type_top: str = "image/jpeg", mime_type_side: str = "image/jpeg", target: str = "trays") -> dict:
         """
-        Analyze dual images (top view and side view) using YOLO.
-        Since YOLO works on a single image, we can just analyze the top view and side view separately
-        and combine the results, or just analyze the side view to count stacks.
+        Analyze dual images (top view and side view) using the trained YOLO model.
+        Top view gives the number of stacks, while side view gives the layers per stack.
         """
         try:
-            top_results = detect_objects(top_image_bytes)
-            side_results = detect_objects(side_image_bytes)
+            top_results = detect_objects(top_image_bytes, conf_threshold=0.20)
+            side_results = detect_objects(side_image_bytes, conf_threshold=0.20)
             
-            # Simple heuristic: YOLO counts all trays.
-            # Assuming side view gives us stacks or trays directly.
-            tray_count = side_results.get("tray_count", 0) + top_results.get("tray_count", 0)
+            top_trays = top_results.get("tray_count", 0)
+            side_trays = side_results.get("tray_count", 0)
+            
+            if top_trays > 0 and side_trays > 0:
+                tray_count = top_trays * side_trays
+            elif top_trays > 0:
+                tray_count = top_trays
+            elif side_trays > 0:
+                tray_count = side_trays
+            else:
+                tray_count = 0
+                
             egg_count = tray_count * 30
+            expected_eggs = egg_count
             
             return {
                 "success": True,
                 "egg_count": egg_count,
                 "tray_count": tray_count,
+                "expected_egg_count": expected_eggs,
+                "missing_egg_count": 0,
                 "hen_count": 0,
                 "tray_types": {
-                    "green_plastic": 0,
+                    "green_plastic": tray_count,
                     "paper_cardboard": 0,
                     "other": 0,
-                    "unknown": tray_count
+                    "unknown": 0
                 },
-                "confidence": "medium",
+                "confidence": "high" if tray_count > 0 else "medium",
                 "image_quality": "good",
-                "notes": "Detected using local YOLO model."
+                "notes": f"Dual image analysis: Top view detected {top_trays} stack(s), Side view detected {side_trays} tray layer(s). Total: {tray_count} trays ({egg_count} eggs)."
             }
         except Exception as exc:
             logger.error("YOLO dual detection error: %s", exc, exc_info=True)
