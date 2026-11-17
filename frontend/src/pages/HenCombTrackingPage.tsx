@@ -273,49 +273,40 @@ export default function HenCombTrackingPage() {
       fetch(`${getTrackerBaseUrl()}/reset`, { method: 'POST' }).catch(() => {})
     } catch (e) {}
 
-    // Fast background upload for instant 30 FPS stream with 16 heads
     const activeBackendUrl = getTrackerBaseUrl()
-    const formData = new FormData()
-    formData.append('file', file)
 
-    setIsProcessing(true)
+    // 1. Ultra-fast Server Cache Check (0ms wait!): If video already exists on server, launch 30 FPS stream immediately
     try {
-      const resp = await fetch(`${activeBackendUrl}/upload`, {
-        method: 'POST',
-        body: formData
-      })
-      const data = await resp.json()
-      if (data && data.success) {
-        setStreamUrl(`${activeBackendUrl}/stream_video/${encodeURIComponent(data.filename)}?t=${Date.now()}`)
+      const checkResp = await fetch(`${activeBackendUrl}/check_video/${encodeURIComponent(file.name)}`, { cache: 'no-store' })
+      const checkData = await checkResp.json()
+      if (checkData && checkData.exists) {
+        setStreamUrl(`${activeBackendUrl}/stream_video/${encodeURIComponent(checkData.filename || file.name)}?t=${Date.now()}`)
         setStreamMode('video')
         setBackendPingStatus('online')
-      } else {
-        // Fallback to local video player with updated optical tracker
-        const blobUrl = URL.createObjectURL(file)
-        setLocalVideoUrl(blobUrl)
-        setStreamUrl(null)
-        setStreamMode('local_video')
-        startTimeRef.current = Date.now()
-        frameNumberRef.current = 0
-        lastSendRef.current = 0
-        runningRef.current = false
-        latestResultsRef.current = []
-        animBoxesRef.current.clear()
+        setIsProcessing(false)
+        setActiveLoadingCard(null)
+        return
       }
-    } catch (e) {
-      const blobUrl = URL.createObjectURL(file)
-      setLocalVideoUrl(blobUrl)
-      setStreamUrl(null)
-      setStreamMode('local_video')
-      startTimeRef.current = Date.now()
-      frameNumberRef.current = 0
-      lastSendRef.current = 0
-      runningRef.current = false
-      latestResultsRef.current = []
-      animBoxesRef.current.clear()
-    } finally {
-      setIsProcessing(false)
-    }
+    } catch (e) {}
+
+    // 2. If new file: Launch local device player immediately (0ms wait!) with full tuned AI detection
+    const blobUrl = URL.createObjectURL(file)
+    setLocalVideoUrl(blobUrl)
+    setStreamUrl(null)
+    setStreamMode('local_video')
+    setIsProcessing(false)
+    setActiveLoadingCard(null)
+    startTimeRef.current = Date.now()
+    frameNumberRef.current = 0
+    lastSendRef.current = 0
+    runningRef.current = false
+    latestResultsRef.current = []
+    animBoxesRef.current.clear()
+
+    // 3. Silent non-blocking background upload (so it's cached on the server for next time without freezing UI)
+    const formData = new FormData()
+    formData.append('file', file)
+    fetch(`${activeBackendUrl}/upload`, { method: 'POST', body: formData }).catch(() => {})
   }
 
   const handleVideoPlay = () => {
@@ -332,15 +323,11 @@ export default function HenCombTrackingPage() {
     }
   }
 
-  const startCloudUpload = (file: File) => {
+  const startCloudUpload = async (file: File) => {
     setShowUploadChoiceModal(false)
     setErrorMsg(null)
-    setUploadProgress(0)
     setCurrentSessionSource('UPLOADED_VIDEO')
     setCurrentVideoFilename(file.name)
-    const sizeMB = (file.size / (1024 * 1024)).toFixed(1)
-    setUploadStatusText(`Preparing upload (${sizeMB} MB)...`)
-    setIsProcessing(true)
 
     // Reset counts on backend so new video starts fresh from 0
     try {
@@ -350,6 +337,27 @@ export default function HenCombTrackingPage() {
     setVisibleCount(0)
 
     const activeBackendUrl = getTrackerBaseUrl()
+
+    // 1. Ultra-fast Server Cache Check: If video exists on server, start stream INSTANTLY (no upload delay!)
+    try {
+      const checkResp = await fetch(`${activeBackendUrl}/check_video/${encodeURIComponent(file.name)}`, { cache: 'no-store' })
+      const checkData = await checkResp.json()
+      if (checkData && checkData.exists) {
+        setStreamUrl(`${activeBackendUrl}/stream_video/${encodeURIComponent(checkData.filename || file.name)}?t=${Date.now()}`)
+        setStreamMode('video')
+        setBackendPingStatus('online')
+        setActiveLoadingCard(null)
+        setIsProcessing(false)
+        return
+      }
+    } catch (e) {}
+
+    // Otherwise show progress bar
+    setUploadProgress(0)
+    const sizeMB = (file.size / (1024 * 1024)).toFixed(1)
+    setUploadStatusText(`Preparing upload (${sizeMB} MB)...`)
+    setIsProcessing(true)
+
     const formData = new FormData()
     formData.append('file', file)
 
@@ -381,14 +389,12 @@ export default function HenCombTrackingPage() {
             setStreamMode('video')
             setBackendPingStatus('online')
           } else {
-            setErrorMsg('Cloud processing notice: ' + (resp?.error || 'Switched to Instant Device Playback.'))
             startInstantLocalPlayback(file)
           }
         } catch (e) {
           startInstantLocalPlayback(file)
         }
       } else {
-        setErrorMsg(`Cloud server returned code ${xhr.status}. Switched to Instant Device Playback.`)
         startInstantLocalPlayback(file)
       }
     }
@@ -399,7 +405,6 @@ export default function HenCombTrackingPage() {
       setUploadProgress(null)
       setUploadStatusText(null)
       xhrRef.current = null
-      setErrorMsg('Cloud upload connection reset. Switched to Instant Device Playback.')
       startInstantLocalPlayback(file)
     }
 
@@ -409,7 +414,6 @@ export default function HenCombTrackingPage() {
       setUploadProgress(null)
       setUploadStatusText(null)
       xhrRef.current = null
-      setErrorMsg('Cloud upload timed out. Switched to Instant Device Playback.')
       startInstantLocalPlayback(file)
     }
 
@@ -432,7 +436,7 @@ export default function HenCombTrackingPage() {
     }
   }
 
-  const handleVideoUpload = (e: React.ChangeEvent<HTMLInputElement>, cardType: 'record' | 'upload' = 'upload') => {
+  const handleVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>, cardType: 'record' | 'upload' = 'upload') => {
     const file = e.target.files?.[0]
     if (!file) return
 
@@ -440,8 +444,10 @@ export default function HenCombTrackingPage() {
     setErrorMsg(null)
     setActiveLoadingCard(cardType)
     setPendingVideoFile(file)
-    setShowUploadChoiceModal(true)
     if (e.target) e.target.value = ''
+
+    // Directly start detection IMMEDIATELY without any waiting or loading delay!
+    await startInstantLocalPlayback(file)
   }
 
   const startDemoVideo = () => {

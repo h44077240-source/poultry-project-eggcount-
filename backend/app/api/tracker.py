@@ -115,6 +115,25 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 UPLOAD_DIR = (PROJECT_ROOT / "uploads").resolve()
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
+@router.get("/check_video/{filename:path}")
+def tracker_check_video(filename: str):
+    import urllib.parse
+    import re
+    clean_filename = urllib.parse.unquote(filename)
+    sanitized_filename = re.sub(r'[^a-zA-Z0-9_.-]', '_', Path(clean_filename).name)
+    candidates = [
+        UPLOAD_DIR / clean_filename,
+        UPLOAD_DIR / sanitized_filename,
+        UPLOAD_DIR / f"_opt_{clean_filename}",
+        UPLOAD_DIR / f"_opt_{sanitized_filename}",
+        PROJECT_ROOT / "uploads" / clean_filename,
+        PROJECT_ROOT / "uploads" / sanitized_filename,
+    ]
+    for p in candidates:
+        if p.exists() and p.is_file():
+            return {"success": True, "exists": True, "filename": clean_filename}
+    return {"success": True, "exists": False, "filename": clean_filename}
+
 @router.post("/upload")
 async def tracker_upload(file: UploadFile = File(...)):
     try:

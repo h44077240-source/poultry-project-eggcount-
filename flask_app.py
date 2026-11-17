@@ -898,6 +898,18 @@ def upload_reference():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
+@app.route('/check_video/<path:filename>', methods=['GET'])
+@app.route('/api/tracker/check_video/<path:filename>', methods=['GET'])
+def check_video_route(filename):
+    import urllib.parse
+    clean_filename = urllib.parse.unquote(filename)
+    safe = secure_filename(clean_filename)
+    for name in [clean_filename, safe, f"_opt_{clean_filename}", f"_opt_{safe}"]:
+        fp = os.path.join(app.config['UPLOAD_FOLDER'], name)
+        if os.path.exists(fp) and os.path.isfile(fp):
+            return jsonify({"success": True, "exists": True, "filename": clean_filename})
+    return jsonify({"success": True, "exists": False, "filename": clean_filename})
+
 @app.route('/upload', methods=['POST'])
 @app.route('/api/tracker/upload', methods=['POST'])
 def upload():
