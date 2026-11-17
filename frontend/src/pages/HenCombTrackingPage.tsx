@@ -881,11 +881,12 @@ export default function HenCombTrackingPage() {
     const offsetX = (cw - renderedW) / 2
     const offsetY = (ch - renderedH) / 2
 
-    // Yellow Detection Zone Box (matching screenshot studio broadcast overlay)
-    const zx1 = offsetX + renderedW * (vw < vh ? 0.02 : 0.04)
-    const zy1 = offsetY + renderedH * (vw < vh ? 0.06 : 0.08)
-    const zx2 = offsetX + renderedW * (vw < vh ? 0.75 : 0.96)
-    const zy2 = offsetY + renderedH * (vw < vh ? 0.90 : 0.88)
+    // Yellow Detection Zone Box (full camera viewfinder when live camera, cage bounds when video)
+    const isCam = streamMode === 'camera'
+    const zx1 = offsetX + renderedW * (isCam ? 0.02 : (vw < vh ? 0.02 : 0.04))
+    const zy1 = offsetY + renderedH * (isCam ? 0.02 : (vw < vh ? 0.06 : 0.08))
+    const zx2 = offsetX + renderedW * (isCam ? 0.98 : (vw < vh ? 0.75 : 0.96))
+    const zy2 = offsetY + renderedH * (isCam ? 0.98 : (vw < vh ? 0.90 : 0.88))
     const zw = zx2 - zx1
     const zh = zy2 - zy1
 
@@ -988,9 +989,9 @@ export default function HenCombTrackingPage() {
       const wRatio = width / renderedW
       const hRatio = height / renderedH
       const isPortrait = renderedW < renderedH
-      const maxWRatio = isPortrait ? 0.35 : 0.32
-      const maxHRatio = isPortrait ? 0.38 : 0.35
-      const maxAreaRatio = 0.085
+      const maxWRatio = isCam ? 0.60 : (isPortrait ? 0.35 : 0.32)
+      const maxHRatio = isCam ? 0.60 : (isPortrait ? 0.38 : 0.35)
+      const maxAreaRatio = isCam ? 0.30 : 0.085
       if (wRatio > maxWRatio || hRatio > maxHRatio || (wRatio * hRatio) > maxAreaRatio) continue
       const aspect = width / Math.max(height, 1)
       if (aspect < 0.20 || aspect > 2.80) continue
