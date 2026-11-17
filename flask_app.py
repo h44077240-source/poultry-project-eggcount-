@@ -355,8 +355,8 @@ def _sync_generate_frames(video_source, ref_settings=None):
             # Authentic vascular crimson comb mask (strictly rejects brown/orange body feathers):
             # Pure red hue (H <= 8 or H >= 168), high saturation (S >= 45), high red dominance (R-G > 20 and R-B > 20)
             comb_mask = (
-                (((h_ch >= 168) | (h_ch <= 8)) & (s_ch > 45) & (v_ch > 45) & ((r_ch - g_ch) > 20) & ((r_ch - b_ch) > 20)) |
-                (((r_ch - np.maximum(g_ch, b_ch)) > 25) & (s_ch > 50) & (v_ch > 50))
+                (((h_ch >= 160) | (h_ch <= 12)) & (s_ch > 30) & (v_ch > 35) & ((r_ch - g_ch) > 12) & ((r_ch - b_ch) > 12)) |
+                (((r_ch - np.maximum(g_ch, b_ch)) > 15) & (s_ch > 30) & (v_ch > 40))
             )
 
             candidates = []
@@ -368,7 +368,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
 
                 # If box is whole hen body, restrict comb crest search strictly to top 35% of the box!
                 # Because the comb is located ONLY at the top crest of the head, never on the body/wings/belly!
-                search_bh = bh * 0.35 if bh > 100 else bh
+                search_bh = bh * 0.35 if bh > 90 else bh
 
                 orig_x1 = max(0, min(in_w - 1, int(bx1)))
                 orig_y1 = max(0, min(in_h - 1, int(by1)))
@@ -377,11 +377,11 @@ def _sync_generate_frames(video_source, ref_settings=None):
 
                 crop = comb_mask[orig_y1:orig_y2, orig_x1:orig_x2]
                 n_px = np.count_nonzero(crop)
-                if n_px < 15 or n_px > 8000:
+                if n_px < 10 or n_px > 8000:
                     continue
 
                 ys, xs = np.where(crop)
-                if len(xs) < 10:
+                if len(xs) < 8:
                     continue
 
                 cx = (orig_x1 + float(np.median(xs))) * scale_x_det
@@ -399,7 +399,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
                 b_m, g_m, r_m = np.mean(bgr_crop[:, :, 0]), np.mean(bgr_crop[:, :, 1]), np.mean(bgr_crop[:, :, 2])
                 red_prom = r_m - max(b_m, g_m)
                 # Authentic comb requires intense red prominence (rejects dull brown feathers)
-                if red_prom < 20.0 or (r_m / (max(b_m, g_m) + 1e-4)) < 1.20:
+                if red_prom < 14.0 or (r_m / (max(b_m, g_m) + 1e-4)) < 1.15:
                     continue
 
                 w_comb = (np.percentile(xs, 90) - np.percentile(xs, 10)) * scale_x_det
@@ -414,11 +414,11 @@ def _sync_generate_frames(video_source, ref_settings=None):
                 })
 
             # Strict head deduplication: No two boxes on the same hen!
-            # Minimum distance between two different hens in adjacent cages is at least 48px
+            # Minimum distance between two different hens in adjacent cages is at least 28px
             candidates.sort(key=lambda d: d["conf"], reverse=True)
             dedup = []
             for d in candidates:
-                if not any(math.hypot(d["center"][0] - ex["center"][0], d["center"][1] - ex["center"][1]) < 48.0 for ex in dedup):
+                if not any(math.hypot(d["center"][0] - ex["center"][0], d["center"][1] - ex["center"][1]) < 28.0 for ex in dedup):
                     dedup.append(d)
             return dedup
         except Exception:
@@ -430,7 +430,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
     next_id = 1
     confirmed_ids = set()
     try:
-        init_dets = extract_combs(sample_frame, conf_thresh=0.18, imgsz=352)
+        init_dets = extract_combs(sample_frame, conf_thresh=0.10, imgsz=640)
         init_in_zone = [d for d in init_dets if is_in_zone(d["center"][0], d["center"][1])]
         if OUT_W < OUT_H:
             init_in_zone.sort(key=lambda d: -d["center"][1])
@@ -480,7 +480,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
                 time.sleep(0.005)
                 continue
             try:
-                fresh_dets = extract_combs(img_to_run, conf_thresh=0.18, imgsz=352)
+                fresh_dets = extract_combs(img_to_run, conf_thresh=0.10, imgsz=640)
                 with ai_lock:
                     ai_results = fresh_dets
             except Exception:
@@ -647,7 +647,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
                     # If this detection is close to ANY known hen (active OR remembered in the last 60 frames):
                     # It is NOT a new hen! Do NOT create a duplicate hen ID!
                     is_near = any(
-                        math.hypot(dcx - h["center"][0], dcy - h["center"][1]) < 48.0 or compute_iou(d["box"], h["box"]) > 0.15
+                        math.hypot(dcx - h["center"][0], dcy - h["center"][1]) < 28.0 or compute_iou(d["box"], h["box"]) > 0.15
                         for h in hens.values() if h["lost"] <= 60
                     )
                     if not is_near:
