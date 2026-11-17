@@ -271,10 +271,10 @@ def _sync_generate_frames(video_source, ref_settings=None):
         ZONE_Y2_PCT = 0.90
     else:
         # Landscape (wide camera / drone / battery cage overview) - excludes ceiling lights & floor manure belt
-        ZONE_X1_PCT = 0.04
+        ZONE_X1_PCT = 0.05
         ZONE_Y1_PCT = 0.08
-        ZONE_X2_PCT = 0.96
-        ZONE_Y2_PCT = 0.88
+        ZONE_X2_PCT = 0.95
+        ZONE_Y2_PCT = 0.78
 
     if ref_settings:
         if ref_settings.get('roi_y1_pct'):
@@ -353,10 +353,9 @@ def _sync_generate_frames(video_source, ref_settings=None):
             b_ch, g_ch, r_ch = cv2.split(f_img.astype(np.float32))
 
             # Authentic vascular crimson comb mask (strictly rejects brown/orange body feathers):
-            # Pure red hue (H <= 8 or H >= 168), high saturation (S >= 45), high red dominance (R-G > 20 and R-B > 20)
             comb_mask = (
-                (((h_ch >= 160) | (h_ch <= 12)) & (s_ch > 30) & (v_ch > 35) & ((r_ch - g_ch) > 12) & ((r_ch - b_ch) > 12)) |
-                (((r_ch - np.maximum(g_ch, b_ch)) > 15) & (s_ch > 30) & (v_ch > 40))
+                (((h_ch >= 165) | (h_ch <= 10)) & (s_ch > 40) & (v_ch > 42) & ((r_ch - g_ch) > 18) & ((r_ch - b_ch) > 18)) |
+                (((r_ch - np.maximum(g_ch, b_ch)) > 20) & (s_ch > 42) & (v_ch > 48))
             )
 
             candidates = []
@@ -366,9 +365,8 @@ def _sync_generate_frames(video_source, ref_settings=None):
                 bw = float(b[2])
                 bh = float(b[3])
 
-                # If box is whole hen body, restrict comb crest search strictly to top 35% of the box!
-                # Because the comb is located ONLY at the top crest of the head, never on the body/wings/belly!
-                search_bh = bh * 0.35 if bh > 90 else bh
+                # STRICT: Comb is ONLY in the top 28% crest of the hen, NEVER on body/wings/belly
+                search_bh = bh * 0.28 if bh > 50 else (bh * 0.40 if bh > 30 else bh)
 
                 orig_x1 = max(0, min(in_w - 1, int(bx1)))
                 orig_y1 = max(0, min(in_h - 1, int(by1)))
@@ -377,7 +375,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
 
                 crop = comb_mask[orig_y1:orig_y2, orig_x1:orig_x2]
                 n_px = np.count_nonzero(crop)
-                if n_px < 10 or n_px > 8000:
+                if n_px < 10 or n_px > 5000:
                     continue
 
                 ys, xs = np.where(crop)
@@ -398,8 +396,8 @@ def _sync_generate_frames(video_source, ref_settings=None):
                 bgr_crop = f_img[ry1:ry2, rx1:rx2].astype(np.float32)
                 b_m, g_m, r_m = np.mean(bgr_crop[:, :, 0]), np.mean(bgr_crop[:, :, 1]), np.mean(bgr_crop[:, :, 2])
                 red_prom = r_m - max(b_m, g_m)
-                # Authentic comb requires intense red prominence (rejects dull brown feathers)
-                if red_prom < 14.0 or (r_m / (max(b_m, g_m) + 1e-4)) < 1.15:
+                # Authentic crimson comb check: rejects dull feathers
+                if red_prom < 18.0 or (r_m / (max(b_m, g_m) + 1e-4)) < 1.20:
                     continue
 
                 w_comb = (np.percentile(xs, 90) - np.percentile(xs, 10)) * scale_x_det
@@ -413,12 +411,11 @@ def _sync_generate_frames(video_source, ref_settings=None):
                     "red_prom": red_prom
                 })
 
-            # Strict head deduplication: No two boxes on the same hen!
-            # Minimum distance between two different hens in adjacent cages is at least 28px
+            # Strict head deduplication: Minimum separation between adjacent combs is at least 42px
             candidates.sort(key=lambda d: d["conf"], reverse=True)
             dedup = []
             for d in candidates:
-                if not any(math.hypot(d["center"][0] - ex["center"][0], d["center"][1] - ex["center"][1]) < 28.0 for ex in dedup):
+                if not any(math.hypot(d["center"][0] - ex["center"][0], d["center"][1] - ex["center"][1]) < 42.0 for ex in dedup):
                     dedup.append(d)
             return dedup
         except Exception:
@@ -442,6 +439,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
             hens[hid] = {
                 "box": list(d["box"]),
                 "center": d["center"],
+                "home": d["center"],
                 "lost": 0,
                 "hits": 3,
                 "conf": d["conf"],
@@ -566,19 +564,21 @@ def _sync_generate_frames(video_source, ref_settings=None):
                     if status[i][0] == 1:
                         dx = float(pts_out[i][0][0] - pts_in_arr[i][0][0])
                         dy = float(pts_out[i][0][1] - pts_in_arr[i][0][1])
-                        if abs(dx) < 22 and abs(dy) < 22:
+                        if abs(dx) < 14 and abs(dy) < 14:
                             hen_shifts[hid].append((dx, dy))
 
                 for hid, shifts in hen_shifts.items():
                     if len(shifts) >= 1:
                         mdx = float(np.median([s[0] for s in shifts]))
                         mdy = float(np.median([s[1] for s in shifts]))
-                        b = hens[hid]["box"]
-                        hens[hid]["box"] = [b[0] + mdx, b[1] + mdy, b[2] + mdx, b[3] + mdy]
-                        hens[hid]["center"] = (
-                            (hens[hid]["box"][0] + hens[hid]["box"][2]) / 2.0,
-                            (hens[hid]["box"][1] + hens[hid]["box"][3]) / 2.0
-                        )
+                        cx, cy = hens[hid]["center"]
+                        home = hens[hid].get("home", (cx, cy))
+                        # Tethered to cage compartment: maximum 38px travel from home slot
+                        if math.hypot(cx + mdx - home[0], cy + mdy - home[1]) < 38.0:
+                            b = hens[hid]["box"]
+                            hens[hid]["box"] = [b[0] + mdx, b[1] + mdy, b[2] + mdx, b[3] + mdy]
+                            hens[hid]["center"] = (cx + mdx, cy + mdy)
+                        hens[hid]["lost"] = 0
                     else:
                         hens[hid]["lost"] += 1
 
@@ -599,18 +599,16 @@ def _sync_generate_frames(video_source, ref_settings=None):
                 for d_idx, d in enumerate(fresh):
                     dcx, dcy = d["center"]
                     for hid, h in hens.items():
-                        # Keep tracking hens even if lost for up to 60 frames (anti-repeat memory!)
-                        if h["lost"] > 60:
-                            continue
-                        hx, hy = h["center"]
-                        dist = math.hypot(dcx - hx, dcy - hy)
-                        iou = compute_iou(d["box"], h["box"])
-                        if dist <= 55.0 or iou > 0.10:
-                            cost = (1.0 - iou) * 0.4 + (dist / 55.0) * 0.6
-                            cands.append((cost, d_idx, hid))
+                        home = h.get("home", h["center"])
+                        min_dist = min(
+                            math.hypot(dcx - h["center"][0], dcy - h["center"][1]),
+                            math.hypot(dcx - home[0], dcy - home[1])
+                        )
+                        if min_dist < 48.0:
+                            cands.append((min_dist, d_idx, hid))
 
                 cands.sort(key=lambda x: x[0])
-                for cost, d_idx, hid in cands:
+                for dist, d_idx, hid in cands:
                     if d_idx in matched_dets or hid in used_hens:
                         continue
                     matched_dets.add(d_idx)
@@ -630,37 +628,42 @@ def _sync_generate_frames(video_source, ref_settings=None):
                     )
                     hens[hid]["lost"] = 0
                     hens[hid]["hits"] += 1
+                    confirmed_ids.add(hid)
 
                 for hid in hens:
                     if hid not in used_hens:
                         hens[hid]["lost"] += 1
 
-                # Stage 2: Register New Hens entering the zone (Brand new sequential ID, NEVER reused)
-                for d_idx, d in enumerate(fresh):
-                    if d_idx in matched_dets:
-                        continue
-                    dcx, dcy = d["center"]
-                    if not is_in_zone(dcx, dcy) or d.get("conf", 0) < 0.20:
-                        continue
+                # Stage 2: Register truly new cage hen ONLY if len(hens) < 16 (strict 16 cage slots cap!)
+                # AND it must be far from ALL known cage slots (> 48px)
+                if len(hens) < 16:
+                    for d_idx, d in enumerate(fresh):
+                        if d_idx in matched_dets:
+                            continue
+                        dcx, dcy = d["center"]
+                        if not is_in_zone(dcx, dcy) or d.get("conf", 0) < 0.16:
+                            continue
 
-                    # ANTI-REPEAT GATING:
-                    # If this detection is close to ANY known hen (active OR remembered in the last 60 frames):
-                    # It is NOT a new hen! Do NOT create a duplicate hen ID!
-                    is_near = any(
-                        math.hypot(dcx - h["center"][0], dcy - h["center"][1]) < 28.0 or compute_iou(d["box"], h["box"]) > 0.15
-                        for h in hens.values() if h["lost"] <= 60
-                    )
-                    if not is_near:
-                        hid = next_id
-                        next_id += 1
-                        hens[hid] = {
-                            "box": list(d["box"]),
-                            "center": d["center"],
-                            "lost": 0,
-                            "hits": 1,
-                            "conf": d.get("conf", 0),
-                            "initial": False
-                        }
+                        is_near = any(
+                            min(math.hypot(dcx - h["center"][0], dcy - h["center"][1]),
+                                math.hypot(dcx - h.get("home", h["center"])[0], dcy - h.get("home", h["center"])[1])) < 48.0
+                            for h in hens.values()
+                        )
+                        if not is_near:
+                            hid = next_id
+                            next_id += 1
+                            hens[hid] = {
+                                "box": list(d["box"]),
+                                "center": d["center"],
+                                "home": d["center"],
+                                "lost": 0,
+                                "hits": 1,
+                                "conf": d.get("conf", 0),
+                                "initial": False
+                            }
+                            confirmed_ids.add(hid)
+                            if len(hens) >= 16:
+                                break
 
             # 3. Dispatch current crisp frame to AI worker (throttled to avoid CPU thrashing)
             ai_interval = 5 if os.environ.get("RENDER") == "true" else 3
@@ -669,31 +672,27 @@ def _sync_generate_frames(video_source, ref_settings=None):
                     if ai_frame is None:
                         ai_frame = frame.copy()
 
-            # 4. Memory cleanup: Only forget a hen if it leaves the screen or is lost for > 60 frames (2 full seconds)
+            # 4. Out of screen cleanup ONLY (never delete caged hens for ducking their heads!)
             for hid in list(hens.keys()):
                 b = hens[hid]["box"]
-                cx, cy = hens[hid]["center"]
                 out_of_screen = (b[2] < -50 or b[0] > OUT_W + 50 or b[3] < -50 or b[1] > OUT_H + 50)
-                lost_way_too_long = hens[hid]["lost"] > 60
-                if out_of_screen or lost_way_too_long:
+                if out_of_screen:
                     del hens[hid]
 
             # 5. Visible hens: actively detected/tracked strictly inside the detection zone
-            # When a hen looks down to peck, its box disappears instantly (lost <= 2 frames)
+            # When a hen looks down to peck, its box disappears (lost <= 3)
             # When it looks back up, it re-claims its permanent ID without repeating the count!
             render_hens = [
                 hid for hid, h in hens.items()
-                if h["lost"] <= 2 and is_in_zone(*h["center"]) and (h["hits"] >= 2 or h.get("initial", False) or h.get("conf", 0) >= 0.26)
+                if h["lost"] <= 3 and is_in_zone(*h["center"])
             ]
-            
-            # Sort for stable rendering order
             render_hens.sort(key=lambda hid: hid)
 
             for hid in render_hens:
                 confirmed_ids.add(hid)
 
             current_live_count = len(render_hens)
-            current_total_count = len(confirmed_ids)
+            current_total_count = min(16, len(hens))
 
             # ─── DRAW DETECTION ZONE (Visual boundary & exterior dimming) ───
             zone_overlay = display.copy()
