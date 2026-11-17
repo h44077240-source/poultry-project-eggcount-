@@ -111,7 +111,7 @@ class OpticalHenTracker:
 
             try:
                 fh, fw = f.shape[:2]
-                infer_imgsz = 640
+                infer_imgsz = 352
                 results = self.model.predict(
                     source=f,
                     verbose=False,
@@ -244,7 +244,7 @@ class OpticalHenTracker:
             # ─── Instant Initial Seed: Spatially ordered 1, 2, 3... ───
             if len(self.hens) == 0:
                 try:
-                    init_imgsz = 640
+                    init_imgsz = 352
                     init_res = self.model.predict(
                         source=frame,
                         verbose=False,

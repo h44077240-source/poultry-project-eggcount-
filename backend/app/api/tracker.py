@@ -347,10 +347,16 @@ def tracker_diag(video_name: str = "demo_hen_video.mp4", step: str = "all"):
             return {"success": True, "log": log}
 
         # Test 1 predict call
-        mark("Testing model.predict on 352 dummy...")
+        mark("Testing model inference on 352 dummy...")
         dummy = np.zeros((352, 352, 3), dtype=np.uint8)
-        pred = model.predict(dummy, imgsz=352, verbose=False)
-        mark("model.predict finished!")
+        if hasattr(model, 'predict'):
+            pred = model.predict(dummy, imgsz=352, verbose=False)
+        elif hasattr(model, 'run'):
+            ai_in = cv2.resize(dummy, (352, 352)).astype(np.float32) / 255.0
+            ai_tensor = np.transpose(ai_in, (2, 0, 1))[np.newaxis, ...]
+            inp_name = model.get_inputs()[0].name
+            pred = model.run(None, {inp_name: ai_tensor})
+        mark("model inference finished!")
 
         if step == "predict":
             return {"success": True, "log": log}
