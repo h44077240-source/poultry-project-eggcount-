@@ -107,7 +107,10 @@ async def update_user(
         raise HTTPException(status_code=403, detail="Cannot assign SUPER_ADMIN role")
 
     for field, value in body.model_dump(exclude_none=True).items():
-        setattr(user, field, value)
+        if field == "password":
+            user.hashed_password = hash_password(value)
+        else:
+            setattr(user, field, value)
     db.commit()
     db.refresh(user)
     return user

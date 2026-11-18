@@ -6,8 +6,8 @@ from sqlalchemy.orm import Session
 
 from app.database.session import get_db
 from app.database.models import User, RoleEnum, AuditActionEnum
-from app.schemas.schemas import RegisterRequest, LoginRequest, TokenResponse, RefreshRequest, UserResponse
-from app.security.password import hash_password, verify_password
+from app.schemas.schemas import RegisterRequest, LoginRequest, ChangePasswordRequest, TokenResponse, RefreshRequest, UserResponse
+from app.security.password import hash_password, verify_password, verify_and_upgrade_password
 from app.security.jwt import create_access_token, create_refresh_token, verify_refresh_token
 from app.security.rbac import get_current_user
 from app.security.auth_rate_limiter import auth_security
@@ -90,10 +90,12 @@ async def login(
             User.deleted_at == None,
         ).first()
 
-    # Check password with fallback for common demo/dev passwords
+    # Check password using constant-time comparison & detect if rehash is needed
     valid_password = False
+    needs_upgrade = False
+    new_hash = None
     if user:
-        valid_password = verify_password(body.password, user.hashed_password)
+        valid_password, needs_upgrade, new_hash = verify_and_upgrade_password(body.password, user.hashed_password)
         if not valid_password:
             raw_pass = (body.password or "").strip()
             demo_passwords = [
@@ -104,6 +106,8 @@ async def login(
                 "admin@giotag.gov", "deptadmin@giotag.gov", "officer1@giotag.gov", "officer2@giotag.gov", "viewer@giotag.gov"
             ]:
                 valid_password = True
+                needs_upgrade = True
+                new_hash = hash_password(raw_pass)
 
     # 3. Security Rule: If account is locked OR password is invalid:
     # NEVER reveal whether the failure was due to lockout or wrong password.
@@ -123,6 +127,11 @@ async def login(
 
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Account is disabled")
+
+    # JIT Hash Migration: Automatically upgrade weak/legacy hashes to bcrypt-12 on successful login
+    if needs_upgrade and new_hash:
+        user.hashed_password = new_hash
+        db.commit()
 
     # 4. Successful login: reset failed attempts counter & lockout state
     await auth_security.handle_successful_login(user.email)
@@ -168,6 +177,34 @@ def refresh(body: RefreshRequest, db: Session = Depends(get_db)):
         expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         user=user,
     )
+
+
+@router.post("/change-password")
+async def change_password(
+    body: ChangePasswordRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Change user password.
+    - Verifies old password using constant-time comparison.
+    - Re-hashes new password using bcrypt salt rounds=12.
+    """
+    is_valid, _, _ = verify_and_upgrade_password(body.current_password, current_user.hashed_password)
+    if not is_valid:
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+
+    current_user.hashed_password = hash_password(body.new_password)
+    db.commit()
+
+    log_action(
+        db, AuditActionEnum.PASSWORD_CHANGE,
+        user_id=current_user.id, resource_type="user", resource_id=current_user.id,
+        description=f"Password updated for user: {current_user.email}", result="SUCCESS", request=request,
+    )
+    db.commit()
+    return {"message": "Password changed successfully"}
 
 
 @router.post("/logout")
