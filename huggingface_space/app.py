@@ -1,3 +1,23 @@
+import warnings
+warnings.filterwarnings("ignore")
+
+# ─── Fix Python 3.12 / Linux asyncio BaseEventLoop.__del__ file descriptor -1 issue ───
+import asyncio.base_events as _base_events
+
+def _patch_asyncio_event_loop_del():
+    original_del = _base_events.BaseEventLoop.__del__
+
+    def patched_del(self):
+        try:
+            original_del(self)
+        except Exception as e:
+            if "Invalid file descriptor" not in str(e):
+                raise
+
+    _base_events.BaseEventLoop.__del__ = patched_del
+
+_patch_asyncio_event_loop_del()
+
 import gradio as gr
 from ultralytics import YOLO
 import cv2
