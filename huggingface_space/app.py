@@ -225,11 +225,26 @@ def detect_video(video_path, conf_threshold):
     out.release()
     
     summary = f"✅ Video Processed: {frame_idx} frames | Unique Hens Tagged: {next_hen_id - 1} | Max Visible Combs: {max_live_heads}"
+
+    # Try remuxing to browser-friendly H.264 mp4 via ffmpeg
+    web_output = "output_browser.mp4"
+    try:
+        import subprocess
+        subprocess.run([
+            "ffmpeg", "-y", "-i", output_path,
+            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "ultrafast",
+            web_output
+        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if os.path.exists(web_output) and os.path.getsize(web_output) > 0:
+            return web_output, summary
+    except Exception:
+        pass
+
     return output_path, summary
 
 
 # Build Gradio UI
-with gr.Blocks(title="🐔 Hen Comb Detection & Counter (YOLOv8)", theme=gr.themes.Soft()) as demo:
+with gr.Blocks(title="🐔 Hen Comb Detection & Counter (YOLOv8)") as demo:
     gr.Markdown("# 🐔 GioTag — Hen Comb AI Detection & Tracking")
     gr.Markdown("Real-time AI Hen Comb detection with **Studio Neon Green Bounding Boxes**, HEAD badges, and Telemetry HUD powered by `best.pt`.")
     
@@ -263,4 +278,4 @@ with gr.Blocks(title="🐔 Hen Comb Detection & Counter (YOLOv8)", theme=gr.them
             )
 
 if __name__ == "__main__":
-    demo.launch()
+    demo.launch(theme=gr.themes.Soft())
