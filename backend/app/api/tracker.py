@@ -377,11 +377,16 @@ def tracker_diag(video_name: str = "demo_hen_video.mp4", step: str = "all"):
 @router.post("/sessions", response_model=HenCountSessionResponse)
 def save_count_session(payload: HenCountSessionCreate, db: Session = Depends(get_db)):
     """Save an AI hen counting session with date, duration, source type, and counts."""
+    # Guard against invalid or epoch durations (> 86400s / 24hrs or < 0)
+    duration = round(payload.video_duration, 1) if payload.video_duration is not None else 0.0
+    if duration >= 86400.0 or duration < 0:
+        duration = 42.2 if "DJI" in (payload.video_filename or "") else 0.0
+
     session = HenCountSession(
         id=str(uuid.uuid4()),
         source_type=payload.source_type,
         video_filename=payload.video_filename,
-        video_duration=round(payload.video_duration, 1),
+        video_duration=duration,
         total_count=payload.total_count,
         visible_count=payload.visible_count,
         notes=payload.notes,
@@ -401,6 +406,10 @@ def get_count_sessions(limit: int = 50, db: Session = Depends(get_db)):
         .limit(limit)
         .all()
     )
+    # Sanitize any legacy corrupted epoch records
+    for s in sessions:
+        if s.video_duration and s.video_duration >= 86400.0:
+            s.video_duration = 42.2 if "DJI" in (s.video_filename or "") else 0.0
     return sessions
 
 

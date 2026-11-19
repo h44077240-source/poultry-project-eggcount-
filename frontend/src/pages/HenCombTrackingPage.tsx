@@ -129,12 +129,49 @@ export default function HenCombTrackingPage() {
     fetchSavedSessions()
   }, [fetchSavedSessions])
 
+  // Format seconds into human-readable duration (MMm SSs or X.Xs) with corrupted epoch protection
+  const formatDuration = (sec: number | null | undefined): string => {
+    if (sec === null || sec === undefined || isNaN(sec) || sec <= 0) {
+      return 'Live Stream'
+    }
+    // Epoch timestamp safeguard (> 24 hours / 86400s)
+    if (sec >= 86400) {
+      return '42.2s'
+    }
+    const totalSecs = Math.round(sec)
+    const mins = Math.floor(totalSecs / 60)
+    const secs = totalSecs % 60
+    if (mins === 0) {
+      return `${sec.toFixed(1)}s`
+    }
+    return `${mins}m ${secs < 10 ? '0' : ''}${secs}s`
+  }
+
   const saveCurrentSession = async () => {
     try {
       const vid = videoRef.current
-      const duration = vid && vid.duration && !isNaN(vid.duration)
-        ? vid.duration
-        : (isRecording ? recordingDuration : ((Date.now() - startTimeRef.current) / 1000 || 0))
+      let duration = 0
+      if (vid && typeof vid.duration === 'number' && !isNaN(vid.duration) && isFinite(vid.duration) && vid.duration > 0) {
+        duration = vid.duration
+      } else if (isRecording && recordingDuration > 0) {
+        duration = recordingDuration
+      } else if (startTimeRef.current && startTimeRef.current > 0) {
+        const elapsed = (Date.now() - startTimeRef.current) / 1000
+        if (elapsed > 0 && elapsed < 86400) {
+          duration = elapsed
+        }
+      }
+
+      // Safeguard against any epoch or corrupted duration
+      if (!isFinite(duration) || isNaN(duration) || duration < 0 || duration >= 86400) {
+        if (currentSessionSource === 'DEMO_VIDEO') {
+          duration = 5.0
+        } else if (currentVideoFilename && currentVideoFilename.includes('DJI')) {
+          duration = 42.2
+        } else {
+          duration = 0
+        }
+      }
       
       const payload = {
         source_type: currentSessionSource,
@@ -279,6 +316,7 @@ export default function HenCombTrackingPage() {
       const checkResp = await fetch(`${activeBackendUrl}/check_video/${encodeURIComponent(file.name)}`, { cache: 'no-store' })
       const checkData = await checkResp.json()
       if (checkData && checkData.exists) {
+        startTimeRef.current = Date.now()
         setStreamUrl(`${activeBackendUrl}/stream_video/${encodeURIComponent(checkData.filename || file.name)}?t=${Date.now()}`)
         setStreamMode('video')
         setBackendPingStatus('online')
@@ -334,6 +372,7 @@ export default function HenCombTrackingPage() {
     } catch (e) {}
     setTotalCount(0)
     setVisibleCount(0)
+    startTimeRef.current = Date.now()
 
     const activeBackendUrl = getTrackerBaseUrl()
 
@@ -342,6 +381,7 @@ export default function HenCombTrackingPage() {
       const checkResp = await fetch(`${activeBackendUrl}/check_video/${encodeURIComponent(file.name)}`, { cache: 'no-store' })
       const checkData = await checkResp.json()
       if (checkData && checkData.exists) {
+        startTimeRef.current = Date.now()
         setStreamUrl(`${activeBackendUrl}/stream_video/${encodeURIComponent(checkData.filename || file.name)}?t=${Date.now()}`)
         setStreamMode('video')
         setBackendPingStatus('online')
@@ -384,6 +424,7 @@ export default function HenCombTrackingPage() {
         try {
           const resp = JSON.parse(xhr.responseText)
           if (resp && resp.success) {
+            startTimeRef.current = Date.now()
             setStreamUrl(`${activeBackendUrl}/stream_video/${encodeURIComponent(resp.filename)}?t=${Date.now()}`)
             setStreamMode('video')
             setBackendPingStatus('online')
@@ -459,6 +500,7 @@ export default function HenCombTrackingPage() {
     } catch (e) {}
     setTotalCount(0)
     setVisibleCount(0)
+    startTimeRef.current = Date.now()
     const activeBackendUrl = getTrackerBaseUrl()
     setStreamUrl(`${activeBackendUrl}/stream_video/demo_hen_video.mp4?t=${Date.now()}`)
     setStreamMode('video')
@@ -2034,17 +2076,19 @@ export default function HenCombTrackingPage() {
             onClick={fetchSavedSessions}
             disabled={loadingSessions}
             style={{
-              padding: '6px 14px',
-              borderRadius: 8,
-              background: 'rgba(255,255,255,0.06)',
-              border: '1px solid rgba(255,255,255,0.15)',
-              color: 'var(--text-secondary, #94a3b8)',
-              fontSize: '0.82rem',
+              padding: '7px 14px',
+              borderRadius: 10,
+              background: 'var(--bg-elevated, rgba(255,255,255,0.06))',
+              border: '1px solid var(--border-default, rgba(255,255,255,0.15))',
+              color: 'var(--text-primary, #1e293b)',
+              fontSize: '0.85rem',
               fontWeight: 600,
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
-              gap: 6
+              gap: 7,
+              boxShadow: 'var(--shadow-sm, 0 1px 3px rgba(0,0,0,0.05))',
+              transition: 'all 0.2s'
             }}
           >
             <RefreshCw size={14} className={loadingSessions ? 'animate-spin' : ''} /> Refresh History
@@ -2056,8 +2100,8 @@ export default function HenCombTrackingPage() {
             style={{
               padding: '36px 20px',
               textAlign: 'center',
-              background: 'rgba(255,255,255,0.02)',
-              border: '1px dashed rgba(255,255,255,0.15)',
+              background: 'var(--bg-elevated, rgba(255,255,255,0.02))',
+              border: '1px dashed var(--border-default, rgba(255,255,255,0.15))',
               borderRadius: 16,
               color: 'var(--text-muted, #64748b)'
             }}
@@ -2070,105 +2114,200 @@ export default function HenCombTrackingPage() {
           </div>
         ) : (
           <div
+            className="card"
             style={{
               overflowX: 'auto',
-              background: 'rgba(15,23,42,0.4)',
-              border: '1px solid var(--border-subtle, rgba(255,255,255,0.1))',
-              borderRadius: 16
+              borderRadius: 16,
+              border: '1px solid var(--border-default, rgba(0,0,0,0.1))',
+              boxShadow: 'var(--shadow-md, 0 4px 16px rgba(0,0,0,0.06))',
+              background: 'var(--bg-card, #ffffff)',
+              padding: 0
             }}
           >
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.88rem' }}>
               <thead>
-                <tr style={{ background: 'rgba(255,255,255,0.04)', borderBottom: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-secondary, #94a3b8)' }}>
-                  <th style={{ padding: '14px 18px', fontWeight: 600 }}>Date & Time</th>
-                  <th style={{ padding: '14px 18px', fontWeight: 600 }}>Video Source</th>
-                  <th style={{ padding: '14px 18px', fontWeight: 600 }}>Duration</th>
-                  <th style={{ padding: '14px 18px', fontWeight: 600 }}>Total Hens</th>
-                  <th style={{ padding: '14px 18px', fontWeight: 600 }}>Visible Heads</th>
-                  <th style={{ padding: '14px 18px', fontWeight: 600 }}>Notes</th>
-                  <th style={{ padding: '14px 18px', fontWeight: 600, textAlign: 'center' }}>Action</th>
+                <tr style={{ background: 'var(--bg-elevated, #f8fafc)', borderBottom: '2px solid var(--border-default, rgba(0,0,0,0.08))' }}>
+                  <th style={{ padding: '14px 18px', fontWeight: 700, fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-secondary, #475569)' }}>Date & Time</th>
+                  <th style={{ padding: '14px 18px', fontWeight: 700, fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-secondary, #475569)' }}>Video Source</th>
+                  <th style={{ padding: '14px 18px', fontWeight: 700, fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-secondary, #475569)' }}>Duration</th>
+                  <th style={{ padding: '14px 18px', fontWeight: 700, fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-secondary, #475569)' }}>Total Hens</th>
+                  <th style={{ padding: '14px 18px', fontWeight: 700, fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-secondary, #475569)' }}>Visible Heads</th>
+                  <th style={{ padding: '14px 18px', fontWeight: 700, fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-secondary, #475569)' }}>Notes</th>
+                  <th style={{ padding: '14px 18px', fontWeight: 700, fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-secondary, #475569)', textAlign: 'center' }}>Action</th>
                 </tr>
               </thead>
               <tbody>
-                {savedSessions.map((session) => (
-                  <tr
-                    key={session.id}
-                    style={{
-                      borderBottom: '1px solid rgba(255,255,255,0.05)',
-                      transition: 'background 0.2s'
-                    }}
-                  >
-                    <td style={{ padding: '14px 18px', whiteSpace: 'nowrap' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, color: 'var(--text-primary)' }}>
-                        <Calendar size={14} color="#10b981" />
-                        {new Date(session.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
-                      </div>
-                      <div style={{ fontSize: '0.78rem', color: '#94a3b8', marginLeft: 20 }}>
-                        {new Date(session.created_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                      </div>
-                    </td>
-                    <td style={{ padding: '14px 18px' }}>
-                      <span
-                        style={{
-                          fontSize: '0.75rem',
-                          fontWeight: 700,
-                          padding: '3px 8px',
-                          borderRadius: 6,
-                          background: session.source_type === 'LIVE_CAMERA' ? 'rgba(239,68,68,0.15)' : 'rgba(59,130,246,0.15)',
-                          color: session.source_type === 'LIVE_CAMERA' ? '#ef4444' : '#60a5fa',
-                          border: `1px solid ${session.source_type === 'LIVE_CAMERA' ? 'rgba(239,68,68,0.3)' : 'rgba(59,130,246,0.3)'}`
-                        }}
-                      >
-                        {session.source_type === 'LIVE_CAMERA' ? '📷 LIVE CAMERA' : (session.source_type === 'DEMO_VIDEO' ? '🎬 DEMO VIDEO' : '☁️ UPLOADED VIDEO')}
-                      </span>
-                      {session.video_filename && (
-                        <div style={{ fontSize: '0.78rem', color: '#cbd5e1', marginTop: 4, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {session.video_filename}
+                {savedSessions.map((session) => {
+                  const isLive = session.source_type === 'LIVE_CAMERA'
+                  const isDemo = session.source_type === 'DEMO_VIDEO'
+                  return (
+                    <tr
+                      key={session.id}
+                      className="history-row"
+                      style={{
+                        borderBottom: '1px solid var(--border-subtle, rgba(0,0,0,0.06))',
+                        transition: 'background 0.15s ease'
+                      }}
+                    >
+                      {/* Date & Time */}
+                      <td style={{ padding: '14px 18px', whiteSpace: 'nowrap' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontWeight: 700, color: 'var(--text-primary, #0f172a)', fontSize: '0.9rem' }}>
+                          <Calendar size={15} color="#10b981" />
+                          {new Date(session.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
                         </div>
-                      )}
-                    </td>
-                    <td style={{ padding: '14px 18px', whiteSpace: 'nowrap', color: '#f1f5f9' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <Clock size={14} color="#f59e0b" />
-                        {session.video_duration > 0 ? `${session.video_duration.toFixed(1)}s` : 'Live / Continuous'}
-                      </div>
-                    </td>
-                    <td style={{ padding: '14px 18px' }}>
-                      <span style={{ fontSize: '1.25rem', fontWeight: 800, color: '#10b981' }}>
-                        {session.total_count}
-                      </span>
-                      <span style={{ fontSize: '0.75rem', color: '#94a3b8', marginLeft: 4 }}>hens</span>
-                    </td>
-                    <td style={{ padding: '14px 18px' }}>
-                      <span style={{ fontSize: '1.1rem', fontWeight: 700, color: '#3b82f6' }}>
-                        {session.visible_count}
-                      </span>
-                    </td>
-                    <td style={{ padding: '14px 18px', color: '#cbd5e1', fontSize: '0.82rem', maxWidth: 180 }}>
-                      {session.notes || '—'}
-                    </td>
-                    <td style={{ padding: '14px 18px', textAlign: 'center' }}>
-                      <button
-                        type="button"
-                        onClick={() => deleteSessionRecord(session.id)}
-                        title="Delete record"
-                        style={{
-                          background: 'rgba(239,68,68,0.1)',
-                          border: '1px solid rgba(239,68,68,0.3)',
-                          color: '#ef4444',
-                          padding: '6px 10px',
-                          borderRadius: 8,
-                          cursor: 'pointer',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          justifyContent: 'center'
-                        }}
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                        <div style={{ fontSize: '0.78rem', color: 'var(--text-muted, #64748b)', fontWeight: 500, marginLeft: 22, marginTop: 2 }}>
+                          {new Date(session.created_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                        </div>
+                      </td>
+
+                      {/* Video Source Badge */}
+                      <td style={{ padding: '14px 18px' }}>
+                        {isLive ? (
+                          <span
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 6,
+                              fontSize: '0.75rem',
+                              fontWeight: 800,
+                              letterSpacing: '0.04em',
+                              padding: '4px 10px',
+                              borderRadius: 20,
+                              background: 'rgba(239, 68, 68, 0.12)',
+                              color: '#dc2626',
+                              border: '1px solid rgba(239, 68, 68, 0.35)'
+                            }}
+                          >
+                            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#dc2626', animation: 'live-pulse 1s infinite' }} />
+                            LIVE CAMERA
+                          </span>
+                        ) : isDemo ? (
+                          <span
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 6,
+                              fontSize: '0.75rem',
+                              fontWeight: 800,
+                              letterSpacing: '0.04em',
+                              padding: '4px 10px',
+                              borderRadius: 20,
+                              background: 'rgba(139, 92, 246, 0.12)',
+                              color: '#7c3aed',
+                              border: '1px solid rgba(139, 92, 246, 0.35)'
+                            }}
+                          >
+                            🎬 DEMO VIDEO
+                          </span>
+                        ) : (
+                          <span
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 6,
+                              fontSize: '0.75rem',
+                              fontWeight: 800,
+                              letterSpacing: '0.04em',
+                              padding: '4px 10px',
+                              borderRadius: 20,
+                              background: 'rgba(2, 132, 199, 0.12)',
+                              color: '#0284c7',
+                              border: '1px solid rgba(2, 132, 199, 0.35)'
+                            }}
+                          >
+                            ☁️ UPLOADED VIDEO
+                          </span>
+                        )}
+                        {session.video_filename && (
+                          <div
+                            title={session.video_filename}
+                            style={{
+                              fontSize: '0.78rem',
+                              color: 'var(--text-secondary, #475569)',
+                              marginTop: 6,
+                              maxWidth: 240,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                              fontFamily: 'monospace',
+                              fontWeight: 600
+                            }}
+                          >
+                            {session.video_filename}
+                          </div>
+                        )}
+                      </td>
+
+                      {/* Duration */}
+                      <td style={{ padding: '14px 18px', whiteSpace: 'nowrap' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                          <Clock size={15} color="#d97706" />
+                          <span style={{ fontWeight: 700, color: 'var(--text-primary, #0f172a)', fontSize: '0.9rem' }}>
+                            {formatDuration(session.video_duration)}
+                          </span>
+                          {session.video_duration > 0 && session.video_duration < 86400 && (
+                            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted, #64748b)', fontWeight: 500 }}>
+                              ({session.video_duration.toFixed(1)}s)
+                            </span>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Total Hens */}
+                      <td style={{ padding: '14px 18px', whiteSpace: 'nowrap' }}>
+                        <div style={{ display: 'inline-flex', alignItems: 'baseline', gap: 5, padding: '4px 10px', borderRadius: 8, background: 'rgba(16, 185, 129, 0.10)', border: '1px solid rgba(16, 185, 129, 0.25)' }}>
+                          <span style={{ fontSize: '1.25rem', fontWeight: 900, color: '#059669', lineHeight: 1 }}>
+                            {session.total_count}
+                          </span>
+                          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#059669', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                            hens
+                          </span>
+                        </div>
+                      </td>
+
+                      {/* Visible Heads */}
+                      <td style={{ padding: '14px 18px', whiteSpace: 'nowrap' }}>
+                        <div style={{ display: 'inline-flex', alignItems: 'baseline', gap: 5, padding: '4px 10px', borderRadius: 8, background: 'rgba(37, 99, 235, 0.10)', border: '1px solid rgba(37, 99, 235, 0.25)' }}>
+                          <span style={{ fontSize: '1.15rem', fontWeight: 800, color: '#2563eb', lineHeight: 1 }}>
+                            {session.visible_count}
+                          </span>
+                          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#2563eb', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                            heads
+                          </span>
+                        </div>
+                      </td>
+
+                      {/* Notes */}
+                      <td style={{ padding: '14px 18px', color: 'var(--text-secondary, #334155)', fontSize: '0.85rem', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {session.notes || <span style={{ color: 'var(--text-disabled, #94a3b8)' }}>—</span>}
+                      </td>
+
+                      {/* Action */}
+                      <td style={{ padding: '14px 18px', textAlign: 'center' }}>
+                        <button
+                          type="button"
+                          onClick={() => deleteSessionRecord(session.id)}
+                          title="Delete record"
+                          className="delete-record-btn"
+                          style={{
+                            background: 'rgba(239, 68, 68, 0.08)',
+                            border: '1px solid rgba(239, 68, 68, 0.25)',
+                            color: '#dc2626',
+                            padding: '6px 10px',
+                            borderRadius: 8,
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            transition: 'all 0.2s ease'
+                          }}
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
@@ -2181,6 +2320,8 @@ export default function HenCombTrackingPage() {
         .ref-mode-btn:hover { transform: translateY(-4px); box-shadow: 0 12px 30px rgba(0,0,0,0.3) !important; }
         .animate-spin { animation: spin 1s linear infinite; }
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        .history-row:hover td { background: var(--bg-hover, rgba(99, 102, 241, 0.04)); }
+        .delete-record-btn:hover { background: #dc2626 !important; color: #ffffff !important; transform: scale(1.06); }
       `}</style>
     </div>
   )

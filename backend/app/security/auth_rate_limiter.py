@@ -216,3 +216,4 @@ class AuthSecurityManager:
 
 # Global singleton instance
 auth_security = AuthSecurityManager()
+

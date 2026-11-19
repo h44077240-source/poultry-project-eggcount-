@@ -98,3 +98,4 @@ def audit_and_migrate_passwords(dry_run: bool = False):
 if __name__ == "__main__":
     dry_run = "--dry-run" in sys.argv
     audit_and_migrate_passwords(dry_run=dry_run)
+
