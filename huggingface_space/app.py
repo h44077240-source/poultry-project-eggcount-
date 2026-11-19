@@ -290,6 +290,16 @@ with gr.Blocks(title="🐔 Hen Comb Detection & Counter (YOLOv8)") as demo:
                 vid_msg = gr.Textbox(label="Video Tracking Summary")
         vid_btn.click(fn=detect_video, inputs=[vid_in, vid_slider], outputs=[vid_out, vid_msg])
         
+        # Dedicated /predict API endpoint for gradio_client (takes 1 arg: handle_file(video_path))
+        def api_predict_video(video_path):
+            out_vid, _ = detect_video(video_path, conf_threshold=0.25)
+            return out_vid
+
+        api_in = gr.Video(visible=False)
+        api_out = gr.Video(visible=False)
+        api_btn = gr.Button("API Predict", visible=False)
+        api_btn.click(fn=api_predict_video, inputs=api_in, outputs=api_out, api_name="predict")
+        
         if os.path.exists("demo_hen_video.mp4"):
             gr.Examples(
                 examples=[["demo_hen_video.mp4", 0.25]],
