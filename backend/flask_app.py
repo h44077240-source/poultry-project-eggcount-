@@ -373,81 +373,29 @@ def _sync_generate_frames(video_source, ref_settings=None):
                 bx_list = [[b[0], b[1], b[2] - b[0], b[3] - b[1]] for b in bx]
                 cf_list = [float(c) for c in cf]
 
-            hsv = cv2.cvtColor(f_img, cv2.COLOR_BGR2HSV)
-            h_ch, s_ch, v_ch = cv2.split(hsv)
-            b_ch, g_ch, r_ch = cv2.split(f_img.astype(np.float32))
-
-            # Authentic vascular crimson comb mask (strictly rejects brown/orange body feathers):
-            comb_mask = (
-                (((h_ch >= 165) | (h_ch <= 10)) & (s_ch > 40) & (v_ch > 42) & ((r_ch - g_ch) > 18) & ((r_ch - b_ch) > 18)) |
-                (((r_ch - np.maximum(g_ch, b_ch)) > 20) & (s_ch > 42) & (v_ch > 48))
-            )
-
             candidates = []
             for b, conf in zip(bx_list, cf_list):
-                bx1 = float(b[0])
-                by1 = float(b[1])
-                bw = float(b[2])
-                bh = float(b[3])
-
-                # STRICT: Comb is ONLY in the top 28% crest of the hen, NEVER on body/wings/belly
-                search_bh = bh * 0.28 if bh > 50 else (bh * 0.40 if bh > 30 else bh)
-
-                orig_x1 = max(0, min(in_w - 1, int(bx1)))
-                orig_y1 = max(0, min(in_h - 1, int(by1)))
-                orig_x2 = max(0, min(in_w - 1, int(bx1 + bw)))
-                orig_y2 = max(0, min(in_h - 1, int(by1 + search_bh)))
-
-                crop = comb_mask[orig_y1:orig_y2, orig_x1:orig_x2]
-                n_px = np.count_nonzero(crop)
-                if n_px < 10 or n_px > 5000:
                 bx1, by1, bw, bh = b
                 if bw < 4 or bh < 4:
                     continue
-
-                ys, xs = np.where(crop)
-                if len(xs) < 8:
-                    continue
-
-                cx = (orig_x1 + float(np.median(xs))) * scale_x_det
-                cy = (orig_y1 + float(np.median(ys))) * scale_y_det
-
                 cx = (bx1 + bw / 2.0) * scale_x_det
                 cy = (by1 + bh / 2.0) * scale_y_det
                 if not is_in_zone(cx, cy):
                     continue
-
-                # Biological red prominence check against metal/shadows/body feathers
-                cx_f = int(orig_x1 + float(np.median(xs)))
-                cy_f = int(orig_y1 + float(np.median(ys)))
-                rx1, ry1 = max(0, cx_f - 10), max(0, cy_f - 10)
-                rx2, ry2 = min(in_w, cx_f + 10), min(in_h, cy_f + 10)
-                bgr_crop = f_img[ry1:ry2, rx1:rx2].astype(np.float32)
-                b_m, g_m, r_m = np.mean(bgr_crop[:, :, 0]), np.mean(bgr_crop[:, :, 1]), np.mean(bgr_crop[:, :, 2])
-                red_prom = r_m - max(b_m, g_m)
-                # Authentic crimson comb check: rejects dull feathers
-                if red_prom < 18.0 or (r_m / (max(b_m, g_m) + 1e-4)) < 1.20:
-                    continue
-
-                w_comb = (np.percentile(xs, 90) - np.percentile(xs, 10)) * scale_x_det
-                h_comb = (np.percentile(ys, 90) - np.percentile(ys, 10)) * scale_y_det
-                base_sz = max(24.0, min(34.0, max(w_comb, h_comb) + 4.0))
                 base_sz = max(24.0, min(34.0, max(bw * scale_x_det, bh * scale_y_det) + 2.0))
                 hw, hh = base_sz / 2.0, base_sz / 2.0
                 candidates.append({
                     "box": [cx - hw, cy - hh, cx + hw, cy + hh],
                     "center": (cx, cy),
                     "conf": conf,
-                    "red_prom": red_prom
                 })
 
-            # Strict head deduplication: Minimum separation between adjacent combs is at least 42px
             candidates.sort(key=lambda d: d["conf"], reverse=True)
             dedup = []
             for d in candidates:
-                if not any(math.hypot(d["center"][0] - ex["center"][0], d["center"][1] - ex["center"][1]) < 42.0 for ex in dedup):
                 if not any(math.hypot(d["center"][0] - ex["center"][0], d["center"][1] - ex["center"][1]) < 18.0 for ex in dedup):
                     dedup.append(d)
+            return dedup
             return dedup
         except Exception:
             return []
