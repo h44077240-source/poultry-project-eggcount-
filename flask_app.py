@@ -298,7 +298,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
 
     def extract_combs(f_img, conf_thresh=0.03, imgsz=None):
         if imgsz is None:
-            imgsz = 640
+            imgsz = 352 if is_cloud else 640
         if active_model is None:
             return []
         try:
@@ -407,8 +407,20 @@ def _sync_generate_frames(video_source, ref_settings=None):
     disp0 = cv2.resize(sample_frame, (OUT_W, OUT_H), interpolation=cv2.INTER_LINEAR)
     hens = {}
     next_id = 1
+
+    # Instant Frame 0 yield so browser video shows up immediately (0.02s) without black screen wait
     try:
-        init_dets = extract_combs(sample_frame)
+        init_disp = disp0.copy()
+        cv2.putText(init_disp, "CONNECTING AI COMB STREAM...", (14, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.44, (0, 255, 0), 2, cv2.LINE_AA)
+        ret0, buf0 = cv2.imencode('.jpg', init_disp, [int(cv2.IMWRITE_JPEG_QUALITY), 50 if is_cloud else 65])
+        if ret0:
+            yield (b'--frame\r\n'
+                   b'Content-Type: image/jpeg\r\n\r\n' + buf0.tobytes() + b'\r\n')
+    except Exception:
+        pass
+
+    try:
+        init_dets = extract_combs(sample_frame, imgsz=352 if is_cloud else 640)
         init_in_zone = [d for d in init_dets if is_in_zone(d["center"][0], d["center"][1])]
         if OUT_W < OUT_H:
             init_in_zone.sort(key=lambda d: -d["center"][1])

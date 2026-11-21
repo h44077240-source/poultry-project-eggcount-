@@ -21,6 +21,7 @@ export default function HenCombTrackingPage() {
   const [isFullScreenVideo, setIsFullScreenVideo] = useState(false)
   const [isRecording, setIsRecording] = useState(false)
   const [recordingDuration, setRecordingDuration] = useState(0)
+  const [isStreamLoading, setIsStreamLoading] = useState(false)
 
   // Saved Session History
   const [savedSessions, setSavedSessions] = useState<any[]>([])
@@ -347,6 +348,7 @@ export default function HenCombTrackingPage() {
         try {
           const resp = JSON.parse(xhr.responseText)
           if (resp && resp.success) {
+            setIsStreamLoading(true)
             setStreamUrl(`${activeBackendUrl}/stream_video/${encodeURIComponent(resp.filename)}?t=${Date.now()}`)
             setStreamMode('video')
             setBackendPingStatus('online')
@@ -433,6 +435,7 @@ export default function HenCombTrackingPage() {
     setTotalCount(0)
     setVisibleCount(0)
     const activeBackendUrl = getTrackerBaseUrl()
+    setIsStreamLoading(true)
     setStreamUrl(`${activeBackendUrl}/stream_video/demo_hen_video.mp4?t=${Date.now()}`)
     setStreamMode('video')
   }
@@ -1757,6 +1760,7 @@ export default function HenCombTrackingPage() {
                   type="button"
                   onClick={() => {
                     if (streamUrl) {
+                      setIsStreamLoading(true)
                       const base = streamUrl.split('?')[0]
                       setStreamUrl(`${base}?t=${Date.now()}`)
                     }
@@ -1828,12 +1832,46 @@ export default function HenCombTrackingPage() {
                   />
                 </div>
               ) : streamUrl ? (
-                <img
-                  key={streamUrl}
-                  src={streamUrl}
-                  style={{ maxWidth: '100%', maxHeight: '75vh', objectFit: 'contain' }}
-                  alt="AI Stream"
-                />
+                <div style={{ position: 'relative', width: '100%', height: '100%', minHeight: 440, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                  {isStreamLoading && (
+                    <div style={{
+                      position: 'absolute',
+                      inset: 0,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      background: 'rgba(0,0,0,0.88)',
+                      zIndex: 5,
+                      gap: 16,
+                      padding: 24,
+                      textAlign: 'center'
+                    }}>
+                      <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'rgba(16,185,129,0.15)', border: '2px solid #10b981', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 25px rgba(16,185,129,0.4)' }}>
+                        <RefreshCw className="animate-spin" size={28} color="#10b981" />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '1.15rem', fontWeight: 700, color: '#10b981' }}>
+                          Connecting AI Stream...
+                        </div>
+                        <div style={{ fontSize: '0.85rem', color: '#94a3b8', marginTop: 4, maxWidth: 360 }}>
+                          Initializing 30 FPS optical flow tracker & seeding hen combs...
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  <img
+                    key={streamUrl}
+                    src={streamUrl}
+                    onLoad={() => setIsStreamLoading(false)}
+                    onError={() => {
+                      setIsStreamLoading(false)
+                      setErrorMsg('Stream connection issue: video took too long or server is starting up. Please click Restart or Re-Upload.')
+                    }}
+                    style={{ maxWidth: '100%', maxHeight: '75vh', objectFit: 'contain' }}
+                    alt="AI Stream"
+                  />
+                </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, padding: 40, textAlign: 'center', minHeight: 400, justifyContent: 'center' }}>
                   <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'rgba(16,185,129,0.12)', border: '2px solid #10b981', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 25px rgba(16,185,129,0.3)' }}>

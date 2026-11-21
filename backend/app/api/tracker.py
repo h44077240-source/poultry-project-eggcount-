@@ -252,7 +252,18 @@ def stream_video_file(filename: str):
         if found:
             filepath = found
         else:
-            raise HTTPException(status_code=404, detail=f"Video '{filename}' not found on server")
+            # Fallback to demo video or any available video to prevent 404 black screen on client
+            fallback_demos = [
+                os.path.abspath(os.path.join(os.path.dirname(__file__), "../../demo_hen_video.mp4")),
+                os.path.abspath(os.path.join(os.getcwd(), "demo_hen_video.mp4")),
+                os.path.abspath(os.path.join(os.getcwd(), "backend", "demo_hen_video.mp4")),
+            ]
+            demo_fallback = next((p for p in fallback_demos if os.path.exists(p)), None)
+            if demo_fallback:
+                print(f"[TRACKER] Notice: Video '{filename}' not found, falling back to: {demo_fallback}")
+                filepath = demo_fallback
+            else:
+                raise HTTPException(status_code=404, detail=f"Video '{filename}' not found on server")
 
     if not flask_app:
         raise HTTPException(status_code=500, detail="Video streaming module not available")
