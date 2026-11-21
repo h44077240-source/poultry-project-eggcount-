@@ -235,12 +235,14 @@ def _sync_generate_frames(video_source, ref_settings=None):
         return
 
     orig_h, orig_w = sample_frame.shape[:2]
+    is_cloud = os.environ.get("RENDER") == "true"
+    base_dim = 480 if is_cloud else 640
     if orig_w >= orig_h:
-        OUT_W = 640
-        OUT_H = int(640 * (orig_h / float(orig_w))) // 2 * 2
+        OUT_W = base_dim
+        OUT_H = int(base_dim * (orig_h / float(orig_w))) // 2 * 2
     else:
-        OUT_H = 640
-        OUT_W = int(640 * (orig_w / float(orig_h))) // 2 * 2
+        OUT_H = base_dim
+        OUT_W = int(base_dim * (orig_w / float(orig_h))) // 2 * 2
     OUT_W = max(320, OUT_W)
     OUT_H = max(240, OUT_H)
 
@@ -475,14 +477,14 @@ def _sync_generate_frames(video_source, ref_settings=None):
                     ai_results = fresh_dets
             except Exception:
                 pass
-            time.sleep(0.08 if os.environ.get("RENDER") == "true" else 0.02)
+            time.sleep(0.04 if os.environ.get("RENDER") == "true" else 0.02)
 
     ai_worker_thread = threading.Thread(target=ai_worker_proc, daemon=True)
     ai_worker_thread.start()
 
     f_idx = 0
     step_no = 0
-    encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 65]
+    encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 50 if os.environ.get("RENDER") == "true" else 65]
     prev_gray = cv2.cvtColor(disp0, cv2.COLOR_BGR2GRAY)
     start_wall = None
 
@@ -742,11 +744,13 @@ def _sync_generate_frames(video_source, ref_settings=None):
             if not is_live:
                 work_time = time.time() - t_frame_start
                 sleep_time = frame_interval - work_time
-                min_sleep = 0.015 if os.environ.get("RENDER") == "true" else 0.005
+                min_sleep = 0.002 if os.environ.get("RENDER") == "true" else 0.005
                 if sleep_time > min_sleep:
                     time.sleep(sleep_time)
+                elif sleep_time > 0:
+                    time.sleep(sleep_time)
                 else:
-                    time.sleep(min_sleep)
+                    time.sleep(0.001)
             else:
                 time.sleep(0.002)
 
