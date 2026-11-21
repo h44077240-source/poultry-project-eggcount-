@@ -9,7 +9,7 @@ import {
 } from 'recharts'
 import {
   Image, CheckCircle, AlertTriangle, Clock, Users,
-  Smartphone, Blocks, TrendingUp, Shield, HeartPulse, Camera, Activity
+  Smartphone, Blocks, TrendingUp, Shield, CheckSquare, Camera
 } from 'lucide-react'
 
 interface TrendPoint { date: string; count: number }
@@ -61,12 +61,7 @@ export default function DashboardPage() {
     { label:'This Week',      value: stats.evidence_this_week, icon: TrendingUp, color:'#14b8a6', sub:'Evidence captured' },
   ] : []
 
-  const healthStats = [
-    { label: 'Total Flocks Monitored', value: 1250, icon: Activity, color: '#3b82f6', sub: '+12 this week' },
-    { label: 'Healthy Hens', value: 1142, icon: CheckCircle, color: '#10b981', sub: '91.3% of total' },
-    { label: 'Attention Required', value: 108, icon: AlertTriangle, color: '#f59e0b', sub: 'Minor issues detected' },
-    { label: 'Critical Health', value: 0, icon: HeartPulse, color: '#ef4444', sub: 'Urgent care needed' },
-  ]
+
 
   return (
     <div className="page-with-bg">
@@ -97,31 +92,8 @@ export default function DashboardPage() {
         ))}
       </div>
 
-      <div style={{ marginTop: '32px', marginBottom: '16px' }}>
-        <h2 className="page-title" style={{ fontSize: '1.25rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <HeartPulse size={20} color="#ef4444" />
-          Poultry Health Metrics
-        </h2>
-      </div>
-
-      {/* Health Stat Cards */}
-      <div className="stat-grid" style={{ marginBottom: '32px' }}>
-        {healthStats.map((card) => (
-          <div key={card.label} className="stat-card" style={{ '--stat-color': card.color } as React.CSSProperties}>
-            <div className="stat-icon">
-              <card.icon size={20} color={card.color} />
-            </div>
-            <div>
-              <div className="stat-value">{card.value.toLocaleString()}</div>
-              <div className="stat-label">{card.label}</div>
-              <div className="stat-change" style={{ color: card.color }}>{card.sub}</div>
-            </div>
-          </div>
-        ))}
-      </div>
-
       {/* Charts */}
-      <div className="charts-grid">
+      <div className="charts-grid" style={{ marginTop: '24px' }}>
         {/* Evidence Trend */}
         <div className="card">
           <div className="card-header">
@@ -169,10 +141,10 @@ export default function DashboardPage() {
           <h3 className="card-title">Quick Actions</h3>
         </div>
         <div style={{ padding: '24px', display: 'flex', gap: '16px' }}>
-          <Link to="/hen-health" style={{ textDecoration: 'none', flex: 1 }}>
+          <Link to="/egg-counter" style={{ textDecoration: 'none', flex: 1 }}>
             <div style={{ 
-              background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, rgba(239, 68, 68, 0.05) 100%)',
-              border: '1px solid rgba(239, 68, 68, 0.2)',
+              background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(99, 102, 241, 0.05) 100%)',
+              border: '1px solid rgba(99, 102, 241, 0.2)',
               borderRadius: '12px',
               padding: '24px',
               display: 'flex',
@@ -183,7 +155,7 @@ export default function DashboardPage() {
             }}
             onMouseOver={(e) => {
               e.currentTarget.style.transform = 'translateY(-2px)'
-              e.currentTarget.style.boxShadow = '0 8px 24px rgba(239, 68, 68, 0.15)'
+              e.currentTarget.style.boxShadow = '0 8px 24px rgba(99, 102, 241, 0.15)'
             }}
             onMouseOut={(e) => {
               e.currentTarget.style.transform = 'translateY(0)'
@@ -191,17 +163,17 @@ export default function DashboardPage() {
             }}
             >
               <div style={{ 
-                width: '64px', height: '64px', borderRadius: '16px', background: '#ef4444', 
-                display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 12px rgba(239, 68, 68, 0.4)'
+                width: '64px', height: '64px', borderRadius: '16px', background: '#6366f1', 
+                display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 12px rgba(99, 102, 241, 0.4)'
               }}>
-                <HeartPulse color="white" size={32} />
+                <CheckSquare color="white" size={32} />
               </div>
               <div>
-                <h3 style={{ fontSize: '1.25rem', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '4px' }}>Hen Health AI Diagnostics</h3>
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem' }}>Upload images of poultry to detect health issues instantly using AI.</p>
+                <h3 style={{ fontSize: '1.25rem', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '4px' }}>Egg Counter AI Vision</h3>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem' }}>Upload or capture photos to count and verify eggs instantly with deep learning.</p>
               </div>
-              <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px', color: '#ef4444', fontWeight: '600', fontSize: '0.9rem' }}>
-                <Camera size={18} /> Open Scanner
+              <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px', color: '#6366f1', fontWeight: '600', fontSize: '0.9rem' }}>
+                <Camera size={18} /> Open Counter
               </div>
             </div>
           </Link>

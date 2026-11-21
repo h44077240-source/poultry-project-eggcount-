@@ -4,7 +4,7 @@ echo ========================================================
 echo       GioTag - Live Hen & Comb AI Tracker Launcher
 echo ========================================================
 echo.
-cd /d "c:\Users\sachi\Downloads\giotag project"
+cd /d "%~dp0"
 
 if exist "backend\.venv\Scripts\python.exe" (
     echo Using Backend Virtual Environment...

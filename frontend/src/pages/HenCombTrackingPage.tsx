@@ -348,15 +348,13 @@ export default function HenCombTrackingPage() {
             setStreamMode('video')
             setBackendPingStatus('online')
           } else {
-            setErrorMsg('Cloud processing notice: ' + (resp?.error || 'Switched to Instant Device Playback.'))
-            startInstantLocalPlayback(file)
+            setErrorMsg('Upload processing notice: ' + (resp?.error || 'Failed to start AI stream.'))
           }
         } catch (e) {
-          startInstantLocalPlayback(file)
+          setErrorMsg('Failed to parse server upload response.')
         }
       } else {
-        setErrorMsg(`Cloud server returned code ${xhr.status}. Switched to Instant Device Playback.`)
-        startInstantLocalPlayback(file)
+        setErrorMsg(`Server returned status code ${xhr.status}.`)
       }
     }
 
@@ -366,8 +364,7 @@ export default function HenCombTrackingPage() {
       setUploadProgress(null)
       setUploadStatusText(null)
       xhrRef.current = null
-      setErrorMsg('Cloud upload connection reset. Switched to Instant Device Playback.')
-      startInstantLocalPlayback(file)
+      setErrorMsg('Video upload connection error. Please verify backend is running.')
     }
 
     xhr.ontimeout = () => {
@@ -376,8 +373,7 @@ export default function HenCombTrackingPage() {
       setUploadProgress(null)
       setUploadStatusText(null)
       xhrRef.current = null
-      setErrorMsg('Cloud upload timed out. Switched to Instant Device Playback.')
-      startInstantLocalPlayback(file)
+      setErrorMsg('Video upload timed out. Please retry.')
     }
 
     xhr.timeout = 180000 // 3 minutes timeout
@@ -394,9 +390,6 @@ export default function HenCombTrackingPage() {
     setIsProcessing(false)
     setUploadProgress(null)
     setUploadStatusText(null)
-    if (pendingVideoFile) {
-      startInstantLocalPlayback(pendingVideoFile)
-    }
   }
 
   const handleVideoUpload = (e: React.ChangeEvent<HTMLInputElement>, cardType: 'record' | 'upload' = 'upload') => {
@@ -407,7 +400,10 @@ export default function HenCombTrackingPage() {
     setErrorMsg(null)
     setActiveLoadingCard(cardType)
     setPendingVideoFile(file)
-    setShowUploadChoiceModal(true)
+    setShowUploadChoiceModal(false)
+
+    // Direct Cloud AI Streaming with on-screen bounding boxes (identical to Farm Hen Video!)
+    startCloudUpload(file)
     if (e.target) e.target.value = ''
   }
 
