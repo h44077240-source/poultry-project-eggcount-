@@ -69,6 +69,23 @@ class Settings(BaseSettings):
     # GPS
     GPS_ACCURACY_THRESHOLD_METERS: float = 50.0
 
+    # Rate Limiting & Account Lockout
+    LOGIN_RATE_LIMIT_PER_MINUTE: int = 10
+    ACCOUNT_LOCKOUT_MAX_ATTEMPTS: int = 5
+    ACCOUNT_LOCKOUT_MINUTES: int = 15
+    REDIS_URL: Optional[str] = None
+    UPSTASH_REDIS_URL: Optional[str] = None
+    FRONTEND_URL: str = "http://localhost:5173"
+
+    # Email / SMTP Settings
+    SMTP_HOST: Optional[str] = None
+    SMTP_PORT: int = 587
+    SMTP_USER: Optional[str] = None
+    SMTP_PASSWORD: Optional[str] = None
+    SMTP_TLS: bool = True
+    EMAILS_FROM_EMAIL: str = "security@giotag.gov"
+    EMAILS_FROM_NAME: str = "GioTag Security Team"
+
     # Demo
     SEED_DEMO_DATA: bool = True
 

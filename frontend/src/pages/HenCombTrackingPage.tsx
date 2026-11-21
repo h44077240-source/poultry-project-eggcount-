@@ -303,10 +303,12 @@ export default function HenCombTrackingPage() {
     setShowUploadChoiceModal(false)
     setErrorMsg(null)
     setUploadProgress(0)
+    setStreamMode('video')
+    setStreamUrl(null)
     setCurrentSessionSource('UPLOADED_VIDEO')
     setCurrentVideoFilename(file.name)
     const sizeMB = (file.size / (1024 * 1024)).toFixed(1)
-    setUploadStatusText(`Preparing upload (${sizeMB} MB)...`)
+    setUploadStatusText(`Uploading ${file.name} (${sizeMB} MB)...`)
     setIsProcessing(true)
 
     // Reset counts on backend so new video starts fresh from 0
@@ -348,12 +350,15 @@ export default function HenCombTrackingPage() {
             setStreamMode('video')
             setBackendPingStatus('online')
           } else {
+            setStreamMode(null)
             setErrorMsg('Upload processing notice: ' + (resp?.error || 'Failed to start AI stream.'))
           }
         } catch (e) {
+          setStreamMode(null)
           setErrorMsg('Failed to parse server upload response.')
         }
       } else {
+        setStreamMode(null)
         setErrorMsg(`Server returned status code ${xhr.status}.`)
       }
     }
@@ -364,6 +369,7 @@ export default function HenCombTrackingPage() {
       setUploadProgress(null)
       setUploadStatusText(null)
       xhrRef.current = null
+      setStreamMode(null)
       setErrorMsg('Video upload connection error. Please verify backend is running.')
     }
 
@@ -373,6 +379,7 @@ export default function HenCombTrackingPage() {
       setUploadProgress(null)
       setUploadStatusText(null)
       xhrRef.current = null
+      setStreamMode(null)
       setErrorMsg('Video upload timed out. Please retry.')
     }
 
@@ -1812,13 +1819,30 @@ export default function HenCombTrackingPage() {
                     }}
                   />
                 </div>
-              ) : (
+              ) : streamUrl ? (
                 <img
                   key={streamUrl}
-                  src={streamUrl || ''}
+                  src={streamUrl}
                   style={{ maxWidth: '100%', maxHeight: '75vh', objectFit: 'contain' }}
                   alt="AI Stream"
                 />
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, padding: 40, textAlign: 'center', minHeight: 400, justifyContent: 'center' }}>
+                  <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'rgba(16,185,129,0.12)', border: '2px solid #10b981', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 25px rgba(16,185,129,0.3)' }}>
+                    <RefreshCw className="animate-spin" size={32} color="#10b981" />
+                  </div>
+                  <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#10b981' }}>
+                    {uploadStatusText || 'Initializing AI Detection Stream...'}
+                  </div>
+                  {uploadProgress !== null && (
+                    <div style={{ width: 320, maxWidth: '90%', height: 10, background: 'rgba(255,255,255,0.1)', borderRadius: 5, overflow: 'hidden' }}>
+                      <div style={{ width: `${uploadProgress}%`, height: '100%', background: 'linear-gradient(90deg, #10b981, #06b6d4)', transition: 'width 0.2s ease-out' }} />
+                    </div>
+                  )}
+                  <span style={{ fontSize: '0.88rem', color: '#94a3b8', maxWidth: 450, lineHeight: 1.5 }}>
+                    Uploading video to AI server • Preparing 30 FPS Optical Flow Hen Comb tracking with green boxes...
+                  </span>
+                </div>
               )}
             </div>
 
