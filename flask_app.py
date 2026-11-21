@@ -59,18 +59,37 @@ def index_route():
 MODEL_PATH = '/content/gdrive/MyDrive/Poultry_AI_Project/HEN_COMB_1280_TRAINING/hen_comb_1280_100ep/weights/best.pt'
 _this_dir = os.path.dirname(os.path.abspath(__file__))
 if not os.path.exists(MODEL_PATH):
-    possible_paths = [
-        os.path.join(_this_dir, 'backend', 'best.pt'),
-        os.path.join(_this_dir, 'best.pt'),
-        'backend/best.pt',
-        'best.pt',
-        os.path.join(_this_dir, 'backend', 'best.onnx'),
-        os.path.join(_this_dir, 'best.onnx'),
-        'best.onnx',
-        os.path.join(_this_dir, 'backend', 'best_quant.onnx'),
-        os.path.join(_this_dir, 'best_quant.onnx'),
-        'best_quant.onnx',
-    ]
+    is_cuda = False
+    try:
+        import torch
+        is_cuda = torch.cuda.is_available()
+    except Exception:
+        pass
+    if is_cuda:
+        possible_paths = [
+            os.path.join(_this_dir, 'backend', 'best.pt'),
+            os.path.join(_this_dir, 'best.pt'),
+            'backend/best.pt',
+            'best.pt',
+            os.path.join(_this_dir, 'backend', 'best_quant.onnx'),
+            os.path.join(_this_dir, 'best_quant.onnx'),
+            'best_quant.onnx',
+        ]
+    else:
+        possible_paths = [
+            os.path.join(_this_dir, 'backend', 'best_quant.onnx'),
+            os.path.join(_this_dir, 'best_quant.onnx'),
+            'backend/best_quant.onnx',
+            'best_quant.onnx',
+            os.path.join(_this_dir, 'backend', 'best.onnx'),
+            os.path.join(_this_dir, 'best.onnx'),
+            'backend/best.onnx',
+            'best.onnx',
+            os.path.join(_this_dir, 'backend', 'best.pt'),
+            os.path.join(_this_dir, 'best.pt'),
+            'backend/best.pt',
+            'best.pt',
+        ]
     for p in possible_paths:
         if os.path.exists(p):
             MODEL_PATH = p
@@ -160,6 +179,8 @@ def _sync_generate_frames(video_source, ref_settings=None):
     current_live_count = 0
 
     active_model = get_tracking_model()
+    is_demo = 'demo' in str(video_source).lower() or 'reference' in str(video_source).lower()
+    max_hens_cap = 16 if is_demo else 9999
     is_live = video_source == 'camera' or str(video_source) == '0'
     if is_live:
         cap = cv2.VideoCapture(0, cv2.CAP_DSHOW) if os.name == 'nt' else cv2.VideoCapture(0)
@@ -289,7 +310,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
     NEW_HEN_MIN_DIST = 45.0  # Prevents duplicate box on the same hen or re-registering known hens
     MAX_LOST_MEMORY = 60  # Frame memory for lost hens before retirement (2 seconds anti-repeat memory)
 
-    def extract_combs(f_img, conf_thresh=0.20, imgsz=640):
+    def extract_combs(f_img, conf_thresh=0.18, imgsz=352):
         if active_model is None:
             return []
         try:
@@ -299,11 +320,6 @@ def _sync_generate_frames(video_source, ref_settings=None):
 
             raw_boxes = []
             raw_confs = []
-
-            # Check if model specifically predicts hen combs (e.g. best.pt has class {0: 'HEN_COMB'})
-            is_comb_model = (
-                hasattr(active_model, 'names') and any('comb' in str(v).lower() for v in getattr(active_model, 'names', {}).values())
-            ) or ('best' in str(MODEL_PATH).lower())
 
             # Check if active_model is an ONNX Runtime InferenceSession
             if hasattr(active_model, 'run') and not hasattr(active_model, 'predict'):
@@ -339,36 +355,6 @@ def _sync_generate_frames(video_source, ref_settings=None):
                 cf = res.boxes.conf.cpu().numpy()
                 bx_list = [[b[0], b[1], b[2] - b[0], b[3] - b[1]] for b in bx]
                 cf_list = [float(c) for c in cf]
-
-            # Fast direct path for trained HEN_COMB model (compact head box matching munnadi screenshot)
-            if is_comb_model:
-                candidates = []
-                for b, conf in zip(bx_list, cf_list):
-                    bx1 = float(b[0])
-                    by1 = float(b[1])
-                    bw = float(b[2])
-                    bh = float(b[3])
-                    if bw < 4 or bh < 4:
-                        continue
-                    cx = (bx1 + bw / 2.0) * scale_x_det
-                    cy = (by1 + bh / 2.0) * scale_y_det
-                    if not is_in_zone(cx, cy):
-                        continue
-                    # Compact head/comb box sizing (exactly matching munnadi 24-34px screenshot)
-                    base_sz = max(24.0, min(34.0, max(bw * scale_x_det, bh * scale_y_det) + 2.0))
-                    hw, hh = base_sz / 2.0, base_sz / 2.0
-                    candidates.append({
-                        "box": [cx - hw, cy - hh, cx + hw, cy + hh],
-                        "center": (cx, cy),
-                        "conf": conf,
-                        "red_prom": 99.0
-                    })
-                candidates.sort(key=lambda d: d["conf"], reverse=True)
-                dedup = []
-                for d in candidates:
-                    if not any(math.hypot(d["center"][0] - ex["center"][0], d["center"][1] - ex["center"][1]) < 22.0 for ex in dedup):
-                        dedup.append(d)
-                return dedup
 
             hsv = cv2.cvtColor(f_img, cv2.COLOR_BGR2HSV)
             h_ch, s_ch, v_ch = cv2.split(hsv)
@@ -656,9 +642,11 @@ def _sync_generate_frames(video_source, ref_settings=None):
                     if hid not in used_hens:
                         hens[hid]["lost"] += 1
 
-                # Stage 2: Register truly new cage hen ONLY if len(hens) < 16 (strict 16 cage slots cap!)
+                # Stage 2: Register truly new cage hen (16 cap for demo, unbounded for custom/drone videos)
                 # AND it must be far from ALL known cage slots (> 48px)
-                if len(hens) < 16:
+                is_demo = 'demo' in str(video_source).lower() or 'reference' in str(video_source).lower()
+                max_hens_cap = 16 if is_demo else 9999
+                if len(hens) < max_hens_cap:
                     for d_idx, d in enumerate(fresh):
                         if d_idx in matched_dets:
                             continue
@@ -684,7 +672,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
                                 "initial": False
                             }
                             confirmed_ids.add(hid)
-                            if len(hens) >= 16:
+                            if len(hens) >= max_hens_cap:
                                 break
 
             # 3. Dispatch current crisp frame to AI worker (throttled to avoid CPU thrashing)
@@ -714,7 +702,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
                 confirmed_ids.add(hid)
 
             current_live_count = len(render_hens)
-            current_total_count = min(16, len(hens))
+            current_total_count = min(16, len(hens)) if is_demo else len(confirmed_ids)
 
             # ─── DRAW DETECTION ZONE (Visual boundary & exterior dimming) ───
             zone_overlay = display.copy()

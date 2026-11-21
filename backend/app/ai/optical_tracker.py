@@ -111,7 +111,7 @@ class OpticalHenTracker:
 
             try:
                 fh, fw = f.shape[:2]
-                infer_imgsz = 640
+                infer_imgsz = 352
                 is_comb_model = (
                     hasattr(self.model, 'names') and any('comb' in str(v).lower() for v in getattr(self.model, 'names', {}).values())
                 ) or ('best' in str(self.MODEL_PATH or '').lower())

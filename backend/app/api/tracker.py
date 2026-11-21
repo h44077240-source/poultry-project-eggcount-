@@ -27,31 +27,49 @@ import json
 def get_model_path():
     base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
     backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-    possible_paths = [
-        os.path.join(backend_dir, "best.pt"),
-        os.path.join(base_dir, "backend", "best.pt"),
-        os.path.join(base_dir, "best.pt"),
-        os.path.abspath(os.path.join(os.getcwd(), "backend", "best.pt")),
-        os.path.abspath(os.path.join(os.getcwd(), "best.pt")),
-        "backend/best.pt",
-        "best.pt",
-        os.path.join(backend_dir, "best.onnx"),
-        os.path.join(base_dir, "best.onnx"),
-        os.path.join(base_dir, "backend", "best.onnx"),
-        os.path.abspath(os.path.join(os.getcwd(), "best.onnx")),
-        os.path.abspath(os.path.join(os.getcwd(), "backend", "best.onnx")),
-        "backend/best.onnx",
-        "best.onnx",
-        os.path.join(backend_dir, "best_quant.onnx"),
-        os.path.join(base_dir, "best_quant.onnx"),
-        os.path.join(base_dir, "backend", "best_quant.onnx"),
-        os.path.abspath(os.path.join(os.getcwd(), "best_quant.onnx")),
-        os.path.abspath(os.path.join(os.getcwd(), "backend", "best_quant.onnx")),
-        "backend/best_quant.onnx",
-        "best_quant.onnx",
-        os.path.join(backend_dir, "yolov8n.pt"),
-        os.path.join(base_dir, "yolov8n.pt"),
-    ]
+    import torch
+    is_cuda = torch.cuda.is_available()
+    if is_cuda:
+        possible_paths = [
+            os.path.join(backend_dir, "best.pt"),
+            os.path.join(base_dir, "backend", "best.pt"),
+            os.path.join(base_dir, "best.pt"),
+            os.path.abspath(os.path.join(os.getcwd(), "backend", "best.pt")),
+            os.path.abspath(os.path.join(os.getcwd(), "best.pt")),
+            "backend/best.pt",
+            "best.pt",
+            os.path.join(backend_dir, "best_quant.onnx"),
+            os.path.join(base_dir, "best_quant.onnx"),
+            os.path.join(base_dir, "backend", "best_quant.onnx"),
+            os.path.abspath(os.path.join(os.getcwd(), "best_quant.onnx")),
+            os.path.abspath(os.path.join(os.getcwd(), "backend", "best_quant.onnx")),
+            "backend/best_quant.onnx",
+            "best_quant.onnx",
+        ]
+    else:
+        possible_paths = [
+            os.path.join(backend_dir, "best_quant.onnx"),
+            os.path.join(base_dir, "best_quant.onnx"),
+            os.path.join(base_dir, "backend", "best_quant.onnx"),
+            os.path.abspath(os.path.join(os.getcwd(), "best_quant.onnx")),
+            os.path.abspath(os.path.join(os.getcwd(), "backend", "best_quant.onnx")),
+            "backend/best_quant.onnx",
+            "best_quant.onnx",
+            os.path.join(backend_dir, "best.onnx"),
+            os.path.join(base_dir, "best.onnx"),
+            os.path.join(base_dir, "backend", "best.onnx"),
+            os.path.abspath(os.path.join(os.getcwd(), "best.onnx")),
+            os.path.abspath(os.path.join(os.getcwd(), "backend", "best.onnx")),
+            "backend/best.onnx",
+            "best.onnx",
+            os.path.join(backend_dir, "best.pt"),
+            os.path.join(base_dir, "backend", "best.pt"),
+            os.path.join(base_dir, "best.pt"),
+            os.path.abspath(os.path.join(os.getcwd(), "backend", "best.pt")),
+            os.path.abspath(os.path.join(os.getcwd(), "best.pt")),
+            "backend/best.pt",
+            "best.pt",
+        ]
     for p in possible_paths:
         if os.path.exists(p):
             print(f"[TRACKER] Found model at: {p}")
