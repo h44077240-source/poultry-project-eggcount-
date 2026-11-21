@@ -111,7 +111,7 @@ class OpticalHenTracker:
 
             try:
                 fh, fw = f.shape[:2]
-                infer_imgsz = 640
+                infer_imgsz = 384 if (os.environ.get("RENDER") == "true" or not torch.cuda.is_available()) else 640
                 results = self.model.predict(
                     source=f,
                     verbose=False,
@@ -140,29 +140,36 @@ class OpticalHenTracker:
                     h_ch, s_ch, v_ch = cv2.split(hsv)
                     b_ch, g_ch, r_ch = cv2.split(f.astype(np.float32))
                     comb_red = (
-                        (((h_ch >= 148) | (h_ch <= 20)) & (s_ch > 22) & (v_ch > 30) & ((r_ch - g_ch) > 8)) |
-                        (((r_ch - np.maximum(g_ch, b_ch)) > 10) & (s_ch > 22) & (v_ch > 30))
+                        (((h_ch >= 150) | (h_ch <= 15)) & (s_ch > 32) & (v_ch > 40) & ((r_ch - g_ch) > 12)) |
+                        (((r_ch - np.maximum(g_ch, b_ch)) > 15) & (s_ch > 30) & (v_ch > 45))
                     )
 
                     for box, conf in zip(boxes, confs):
                         x1, y1, x2, y2 = map(int, box)
                         hw = x2 - x1
                         hh = y2 - y1
-                        if hw < 6 or hh < 6:
+                        if hw < 8 or hh < 8:
                             continue
                         if hw > max_comb_w or hh > max_comb_h or (hw * hh) > max_area:
                             continue
 
-                        search_hh = hh * 0.50 if hh > 35 else hh
+                        search_hh = hh * 0.40 if hh > 45 else hh
                         crop_red = comb_red[y1:min(fh - 1, int(y1 + search_hh)), x1:x2]
-                        if np.count_nonzero(crop_red) < 4:
+                        if np.count_nonzero(crop_red) < 8:
                             continue
 
                         ys, xs = np.where(crop_red)
                         scale_factor = max(fw, fh) / 640.0
-                        cx = x1 + float(np.median(xs))
-                        cy = y1 + float(np.median(ys))
-                        base_sz = 24.0 * scale_factor
+                        if len(xs) >= 4:
+                            cx = x1 + float(np.median(xs))
+                            cy = y1 + float(np.median(ys))
+                            w_comb = float(np.percentile(xs, 90) - np.percentile(xs, 10))
+                            h_comb = float(np.percentile(ys, 90) - np.percentile(ys, 10))
+                            base_sz = max(24.0 * scale_factor, min(38.0 * scale_factor, max(w_comb, h_comb) + 6.0))
+                        else:
+                            cx = (x1 + x2) / 2.0
+                            cy = (y1 + y2) / 2.0
+                            base_sz = max(24.0 * scale_factor, min(38.0 * scale_factor, max(hw, hh) + 4.0))
 
                         hw_box = base_sz / 2.0
                         hh_box = base_sz / 2.0
