@@ -153,19 +153,18 @@ class OpticalHenTracker:
                         if hw > max_comb_w or hh > max_comb_h or (hw * hh) > max_area:
                             continue
 
-                        crop_red = comb_red[y1:y2, x1:x2]
+                        search_hh = hh * 0.40 if hh > 45 else hh
+                        crop_red = comb_red[y1:min(fh - 1, int(y1 + search_hh)), x1:x2]
+                        if np.count_nonzero(crop_red) < 8:
+                            continue
+
                         ys, xs = np.where(crop_red)
                         scale_factor = max(fw, fh) / 640.0
-                        if len(xs) >= 6:
-                            cx = x1 + float(np.median(xs))
-                            cy = y1 + float(np.median(ys))
-                            w_comb = float(np.percentile(xs, 90) - np.percentile(xs, 10))
-                            h_comb = float(np.percentile(ys, 90) - np.percentile(ys, 10))
-                            base_sz = max(24.0 * scale_factor, min(38.0 * scale_factor, max(w_comb, h_comb) + 6.0))
-                        else:
-                            cx = (x1 + x2) / 2.0
-                            cy = (y1 + y2) / 2.0
-                            base_sz = max(24.0 * scale_factor, min(38.0 * scale_factor, max(hw, hh) + 4.0))
+                        cx = x1 + float(np.median(xs))
+                        cy = y1 + float(np.median(ys))
+                        w_comb = float(np.percentile(xs, 90) - np.percentile(xs, 10))
+                        h_comb = float(np.percentile(ys, 90) - np.percentile(ys, 10))
+                        base_sz = max(24.0 * scale_factor, min(36.0 * scale_factor, max(w_comb, h_comb) + 6.0))
 
                         hw_box = base_sz / 2.0
                         hh_box = base_sz / 2.0

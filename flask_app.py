@@ -302,7 +302,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
     NEW_HEN_MIN_DIST = 22.0  # Allows adjacent hens in cage compartments without suppression
     MAX_LOST_MEMORY = 25  # Frame memory for lost hens before retirement
 
-    def extract_combs(f_img, conf_thresh=0.03, imgsz=352):
+    def extract_combs(f_img, conf_thresh=0.10, imgsz=640):
         if active_model is None:
             return []
         try:
@@ -324,7 +324,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
                 scale_ai_y = in_h / float(imgsz)
                 for i in range(preds.shape[1]):
                     c = float(preds[4, i])
-                    if c > conf_thresh:
+                    if c >= conf_thresh:
                         cx_ai, cy_ai, w_ai, h_ai = preds[:4, i]
                         cx_orig = float(cx_ai * scale_ai_x)
                         cy_orig = float(cy_ai * scale_ai_y)
@@ -353,34 +353,37 @@ def _sync_generate_frames(video_source, ref_settings=None):
             b_ch, g_ch, r_ch = cv2.split(f_img.astype(np.float32))
 
             comb_mask = (
-                (((h_ch >= 150) | (h_ch <= 15)) & (s_ch > 32) & (v_ch > 40) & ((r_ch - g_ch) > 12)) |
-                (((r_ch - np.maximum(g_ch, b_ch)) > 15) & (s_ch > 30) & (v_ch > 45))
+                (((h_ch >= 150) | (h_ch <= 18)) & (s_ch > 28) & (v_ch > 35) & ((r_ch - g_ch) > 10)) |
+                (((r_ch - np.maximum(g_ch, b_ch)) > 12) & (s_ch > 28) & (v_ch > 40))
             )
 
             candidates = []
             for b, conf in zip(bx_list, cf_list):
-                orig_x1 = max(0, min(in_w - 1, int(float(b[0]))))
-                orig_y1 = max(0, min(in_h - 1, int(float(b[1]))))
-                orig_x2 = max(0, min(in_w - 1, int(float(b[0] + b[2]))))
-                orig_y2 = max(0, min(in_h - 1, int(float(b[1] + b[3]))))
+                bx1 = float(b[0])
+                by1 = float(b[1])
+                bw = float(b[2])
+                bh = float(b[3])
+                if bw < 8 or bh < 8:
+                    continue
+
+                orig_x1 = max(0, min(in_w - 1, int(bx1)))
+                orig_y1 = max(0, min(in_h - 1, int(by1)))
+                orig_x2 = max(0, min(in_w - 1, int(bx1 + bw)))
+                search_bh = bh * 0.40 if bh > 45 else bh
+                orig_y2 = max(0, min(in_h - 1, int(by1 + search_bh)))
 
                 crop = comb_mask[orig_y1:orig_y2, orig_x1:orig_x2]
-                if np.count_nonzero(crop) < 12:
+                if np.count_nonzero(crop) < 10:
                     continue
 
                 ys, xs = np.where(crop)
-                if len(xs) < 8:
-                    continue
-
                 cx = (orig_x1 + float(np.median(xs))) * scale_x_det
                 cy = (orig_y1 + float(np.median(ys))) * scale_y_det
 
                 if cy <= 6 or not is_in_zone(cx, cy):
                     continue
 
-                w_comb = (np.percentile(xs, 90) - np.percentile(xs, 10)) * scale_x_det
-                h_comb = (np.percentile(ys, 90) - np.percentile(ys, 10)) * scale_y_det
-                base_sz = max(26.0, min(38.0, max(w_comb, h_comb) + 6.0))
+                base_sz = 30.0
                 hw, hh = base_sz / 2.0, base_sz / 2.0
                 candidates.append({
                     "box": [cx - hw, cy - hh, cx + hw, cy + hh],
@@ -391,7 +394,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
             candidates.sort(key=lambda d: d["conf"], reverse=True)
             dedup = []
             for d in candidates:
-                if not any(math.hypot(d["center"][0] - ex["center"][0], d["center"][1] - ex["center"][1]) < 22 for ex in dedup):
+                if not any(math.hypot(d["center"][0] - ex["center"][0], d["center"][1] - ex["center"][1]) < 20.0 for ex in dedup):
                     dedup.append(d)
             return dedup
         except Exception:
@@ -402,7 +405,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
     hens = {}
     next_id = 1
     try:
-        init_dets = extract_combs(sample_frame, conf_thresh=0.03, imgsz=352)
+        init_dets = extract_combs(sample_frame, conf_thresh=0.10, imgsz=640)
         init_in_zone = [d for d in init_dets if is_in_zone(d["center"][0], d["center"][1])]
         if OUT_W < OUT_H:
             init_in_zone.sort(key=lambda d: -d["center"][1])
@@ -414,6 +417,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
             hens[hid] = {
                 "box": list(d["box"]),
                 "center": d["center"],
+                "home": d["center"],
                 "lost": 0,
                 "hits": 3
             }
@@ -431,7 +435,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
         except Exception:
             pass
 
-    # Background AI worker running continuously at 352 for ultra-fast response (< 100ms)
+    # Background AI worker running continuously at 640 for crisp comb detection
     ai_lock = threading.Lock()
     ai_frame = None
     ai_results = None
@@ -449,7 +453,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
                 time.sleep(0.005)
                 continue
             try:
-                fresh_dets = extract_combs(img_to_run, conf_thresh=0.03, imgsz=352)
+                fresh_dets = extract_combs(img_to_run, conf_thresh=0.10, imgsz=640)
                 with ai_lock:
                     ai_results = fresh_dets
             except Exception:
@@ -568,10 +572,11 @@ def _sync_generate_frames(video_source, ref_settings=None):
                 for d_idx, d in enumerate(fresh):
                     dcx, dcy = d["center"]
                     for hid, h in hens.items():
-                        if h["lost"] > 25:
+                        if h["lost"] > 60:
                             continue
                         hx, hy = h["center"]
-                        dist = math.hypot(dcx - hx, dcy - hy)
+                        homx, homy = h.get("home", (hx, hy))
+                        dist = min(math.hypot(dcx - hx, dcy - hy), math.hypot(dcx - homx, dcy - homy))
                         iou = compute_iou(d["box"], h["box"])
                         if dist <= 42.0 or iou > 0.15:
                             cost = (1.0 - iou) * 0.4 + (dist / 42.0) * 0.6
@@ -587,23 +592,23 @@ def _sync_generate_frames(video_source, ref_settings=None):
                     nb = d["box"]
                     ob = hens[hid]["box"]
                     hens[hid]["box"] = [
-                        0.35 * nb[0] + 0.65 * ob[0],
-                        0.35 * nb[1] + 0.65 * ob[1],
-                        0.35 * nb[2] + 0.65 * ob[2],
-                        0.35 * nb[3] + 0.65 * ob[3],
+                        0.40 * nb[0] + 0.60 * ob[0],
+                        0.40 * nb[1] + 0.60 * ob[1],
+                        0.40 * nb[2] + 0.60 * ob[2],
+                        0.40 * nb[3] + 0.60 * ob[3],
                     ]
                     hens[hid]["center"] = (
                         (hens[hid]["box"][0] + hens[hid]["box"][2]) / 2.0,
                         (hens[hid]["box"][1] + hens[hid]["box"][3]) / 2.0
                     )
                     hens[hid]["lost"] = 0
-                    hens[hid]["hits"] += 1
+                    hens[hid]["hits"] = hens[hid].get("hits", 0) + 1
 
                 for hid in hens:
                     if hid not in used_hens:
                         hens[hid]["lost"] += 1
 
-                # Stage 2: Register New Hens entering the zone (Brand new sequential ID, NEVER reused)
+                # Stage 2: Register New Hens entering the zone ONLY if far from all known cage compartments
                 for d_idx, d in enumerate(fresh):
                     if d_idx in matched_dets:
                         continue
@@ -612,8 +617,9 @@ def _sync_generate_frames(video_source, ref_settings=None):
                         continue
 
                     is_near = any(
-                        math.hypot(dcx - h["center"][0], dcy - h["center"][1]) < 25.0 or compute_iou(d["box"], h["box"]) > 0.25
-                        for h in hens.values() if h["lost"] <= 25
+                        min(math.hypot(dcx - h["center"][0], dcy - h["center"][1]),
+                            math.hypot(dcx - h.get("home", h["center"])[0], dcy - h.get("home", h["center"])[1])) < 38.0
+                        for h in hens.values() if h["lost"] <= 90
                     )
                     if not is_near:
                         hid = next_id
@@ -621,6 +627,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
                         hens[hid] = {
                             "box": list(d["box"]),
                             "center": d["center"],
+                            "home": d["center"],
                             "lost": 0,
                             "hits": 1
                         }
@@ -632,20 +639,19 @@ def _sync_generate_frames(video_source, ref_settings=None):
                     if ai_frame is None:
                         ai_frame = frame.copy()
 
-            # 4. Immediate retirement: when a hen leaves the zone or is lost, remove its box immediately!
+            # 4. Long-term memory: hens keep their cage slot for 90 frames (~3 seconds) without creating duplicates
             for hid in list(hens.keys()):
                 b = hens[hid]["box"]
                 cx, cy = hens[hid]["center"]
-                out_of_screen = (b[2] < -10 or b[0] > OUT_W + 10 or b[3] < -10 or b[1] > OUT_H + 10)
-                out_of_zone = not is_in_zone(cx, cy)
-                lost_too_long = hens[hid]["lost"] > 15
-                if out_of_screen or out_of_zone or lost_too_long:
+                out_of_screen = (b[2] < -20 or b[0] > OUT_W + 20 or b[3] < -20 or b[1] > OUT_H + 20)
+                lost_too_long = hens[hid]["lost"] > 90
+                if out_of_screen or lost_too_long:
                     del hens[hid]
 
-            # 5. Visible hens: actively detected/tracked strictly inside the detection zone
+            # 5. Visible hens: actively tracked on-screen (clean and responsive, lost <= 4)
             render_hens = [
                 hid for hid, h in hens.items()
-                if h["lost"] <= 8 and is_in_zone(*h["center"])
+                if h["lost"] <= 4 and is_in_zone(*h["center"])
             ]
             
             # Sort for stable rendering order

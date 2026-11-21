@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
-import { Camera, Upload, RefreshCw, FileVideo, Maximize2, Minimize2, X, Video, Scan, CheckCircle2, Activity, Settings, Wifi, WifiOff } from 'lucide-react'
+import { Camera, Upload, RefreshCw, FileVideo, Maximize2, Minimize2, X, Video, Scan, CheckCircle2, Activity, Settings, Wifi, WifiOff, History, Trash2, Calendar, Clock, Film } from 'lucide-react'
 import { getTrackerBaseUrl, getApiBaseUrl, setCustomBackendUrl } from '../utils/apiUrl'
 
 export default function HenCombTrackingPage() {
@@ -21,6 +21,14 @@ export default function HenCombTrackingPage() {
   const [isFullScreenVideo, setIsFullScreenVideo] = useState(false)
   const [isRecording, setIsRecording] = useState(false)
   const [recordingDuration, setRecordingDuration] = useState(0)
+
+  // Saved Session History
+  const [savedSessions, setSavedSessions] = useState<any[]>([])
+  const [loadingSessions, setLoadingSessions] = useState(false)
+  const [sessionNotes, setSessionNotes] = useState('')
+  const [currentSessionSource, setCurrentSessionSource] = useState<'UPLOADED_VIDEO' | 'LIVE_CAMERA' | 'DEMO_VIDEO'>('UPLOADED_VIDEO')
+  const [currentVideoFilename, setCurrentVideoFilename] = useState<string | null>(null)
+  const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null)
 
   // Dynamic Backend State (works on Localhost & Render)
   const [backendUrl, setBackendUrl] = useState<string>(() => getTrackerBaseUrl())
@@ -101,6 +109,74 @@ export default function HenCombTrackingPage() {
   useEffect(() => {
     checkBackendHealth()
   }, [checkBackendHealth])
+
+  // Fetch saved hen count session history
+  const fetchSavedSessions = useCallback(async () => {
+    try {
+      setLoadingSessions(true)
+      const resp = await fetch(`${getTrackerBaseUrl()}/sessions`, { cache: 'no-store' })
+      if (resp.ok) {
+        const data = await resp.json()
+        setSavedSessions(Array.isArray(data) ? data : [])
+      }
+    } catch (e) {
+      console.warn('Failed to fetch sessions:', e)
+    } finally {
+      setLoadingSessions(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchSavedSessions()
+  }, [fetchSavedSessions])
+
+  const saveCurrentSession = async () => {
+    try {
+      const vid = videoRef.current
+      const duration = vid && vid.duration && !isNaN(vid.duration)
+        ? vid.duration
+        : (isRecording ? recordingDuration : ((Date.now() - startTimeRef.current) / 1000 || 0))
+      
+      const payload = {
+        source_type: currentSessionSource,
+        video_filename: currentVideoFilename || (currentSessionSource === 'LIVE_CAMERA' ? 'live_camera_feed' : (currentSessionSource === 'DEMO_VIDEO' ? 'demo_hen_video.mp4' : 'uploaded_video.mp4')),
+        video_duration: Math.max(0, Number(duration.toFixed(1))),
+        total_count: totalCount,
+        visible_count: visibleCount,
+        notes: sessionNotes.trim() || undefined
+      }
+
+      const resp = await fetch(`${getTrackerBaseUrl()}/sessions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+
+      if (resp.ok) {
+        setSaveSuccessMsg('✅ Count session saved successfully with Date & Duration!')
+        setSessionNotes('')
+        fetchSavedSessions()
+        setTimeout(() => setSaveSuccessMsg(null), 4000)
+      } else {
+        setErrorMsg('Failed to save session to database.')
+      }
+    } catch (err: any) {
+      setErrorMsg('Error saving session: ' + err.message)
+    }
+  }
+
+  const deleteSessionRecord = async (id: string) => {
+    try {
+      const resp = await fetch(`${getTrackerBaseUrl()}/sessions/${id}`, {
+        method: 'DELETE'
+      })
+      if (resp.ok) {
+        setSavedSessions(prev => prev.filter(s => s.id !== id))
+      }
+    } catch (e) {
+      console.warn('Failed to delete session:', e)
+    }
+  }
 
   // Poll for total count when streaming server video
   // Real-time polling (350ms) for live detection & total hen counts (smooth without socket contention)
@@ -197,6 +273,8 @@ export default function HenCombTrackingPage() {
     setLocalVideoUrl(blobUrl)
     setStreamUrl(null)
     setStreamMode('local_video')
+    setCurrentSessionSource('UPLOADED_VIDEO')
+    setCurrentVideoFilename(file.name)
     setTotalCount(0)
     setVisibleCount(0)
     startTimeRef.current = Date.now()
@@ -225,6 +303,8 @@ export default function HenCombTrackingPage() {
     setShowUploadChoiceModal(false)
     setErrorMsg(null)
     setUploadProgress(0)
+    setCurrentSessionSource('UPLOADED_VIDEO')
+    setCurrentVideoFilename(file.name)
     const sizeMB = (file.size / (1024 * 1024)).toFixed(1)
     setUploadStatusText(`Preparing upload (${sizeMB} MB)...`)
     setIsProcessing(true)
@@ -334,6 +414,8 @@ export default function HenCombTrackingPage() {
   const startDemoVideo = () => {
     stopLiveCamera()
     setErrorMsg(null)
+    setCurrentSessionSource('DEMO_VIDEO')
+    setCurrentVideoFilename('demo_hen_video.mp4')
     try {
       fetch(`${getTrackerBaseUrl()}/reset`, { method: 'POST' }).catch(() => {})
     } catch (e) {}
@@ -415,6 +497,8 @@ export default function HenCombTrackingPage() {
     stopStream()
     setErrorMsg(null)
     setStreamMode('camera')
+    setCurrentSessionSource('LIVE_CAMERA')
+    setCurrentVideoFilename('live_camera_feed')
     setFacingMode(targetFacing)
     setTotalCount(0)
     setVisibleCount(0)
@@ -525,6 +609,8 @@ export default function HenCombTrackingPage() {
         setErrorMsg(null)
         const ext = mimeType.includes('mp4') ? 'mp4' : 'webm'
         const file = new File([blob], `live_camera_recorded_${Date.now()}.${ext}`, { type: mimeType })
+        setCurrentSessionSource('LIVE_CAMERA')
+        setCurrentVideoFilename(file.name)
         const formData = new FormData()
         formData.append('file', file)
         const activeBackendUrl = getTrackerBaseUrl()
@@ -1831,10 +1917,223 @@ export default function HenCombTrackingPage() {
                   <span style={{ color: 'var(--text-primary)', fontWeight: 700 }}>30 FPS Hardware Sync</span>
                 </div>
               </div>
+
+              {/* Card 4: Save Count Session to Database */}
+              <div
+                style={{
+                  background: 'rgba(16,185,129,0.06)',
+                  border: '1px solid rgba(16,185,129,0.3)',
+                  padding: '16px',
+                  borderRadius: 14,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 10
+                }}
+              >
+                <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#10b981', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <CheckCircle2 size={18} /> Save Count Record
+                </div>
+                <input
+                  type="text"
+                  placeholder="Optional note / batch label..."
+                  value={sessionNotes}
+                  onChange={(e) => setSessionNotes(e.target.value)}
+                  style={{
+                    padding: '8px 12px',
+                    borderRadius: 8,
+                    background: 'rgba(0,0,0,0.3)',
+                    border: '1px solid rgba(255,255,255,0.15)',
+                    color: '#fff',
+                    fontSize: '0.85rem',
+                    outline: 'none'
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={saveCurrentSession}
+                  style={{
+                    padding: '10px 14px',
+                    borderRadius: 10,
+                    background: '#10b981',
+                    color: '#fff',
+                    fontWeight: 700,
+                    fontSize: '0.88rem',
+                    border: 'none',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 8
+                  }}
+                >
+                  <CheckCircle2 size={16} /> Save to History
+                </button>
+                {saveSuccessMsg && (
+                  <div style={{ fontSize: '0.8rem', color: '#10b981', textAlign: 'center', fontWeight: 600 }}>
+                    {saveSuccessMsg}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
       )}
+
+      {/* ─── Hen Count Session Records History Section ─── */}
+      <div style={{ marginTop: 36, width: '100%', maxWidth: 1200 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <History size={24} color="#10b981" />
+            <h3 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
+              Saved Hen Count History & Records
+            </h3>
+          </div>
+          <button
+            type="button"
+            onClick={fetchSavedSessions}
+            disabled={loadingSessions}
+            style={{
+              padding: '6px 14px',
+              borderRadius: 8,
+              background: 'rgba(255,255,255,0.06)',
+              border: '1px solid rgba(255,255,255,0.15)',
+              color: 'var(--text-secondary, #94a3b8)',
+              fontSize: '0.82rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6
+            }}
+          >
+            <RefreshCw size={14} className={loadingSessions ? 'animate-spin' : ''} /> Refresh History
+          </button>
+        </div>
+
+        {savedSessions.length === 0 ? (
+          <div
+            style={{
+              padding: '36px 20px',
+              textAlign: 'center',
+              background: 'rgba(255,255,255,0.02)',
+              border: '1px dashed rgba(255,255,255,0.15)',
+              borderRadius: 16,
+              color: 'var(--text-muted, #64748b)'
+            }}
+          >
+            <Film size={36} style={{ marginBottom: 10, opacity: 0.5 }} />
+            <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>No Hen Count Sessions Saved Yet</div>
+            <div style={{ fontSize: '0.82rem', marginTop: 4 }}>
+              Upload a video or run live camera detection and click "Save to History" to record the count, date, and duration.
+            </div>
+          </div>
+        ) : (
+          <div
+            style={{
+              overflowX: 'auto',
+              background: 'rgba(15,23,42,0.4)',
+              border: '1px solid var(--border-subtle, rgba(255,255,255,0.1))',
+              borderRadius: 16
+            }}
+          >
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.88rem' }}>
+              <thead>
+                <tr style={{ background: 'rgba(255,255,255,0.04)', borderBottom: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-secondary, #94a3b8)' }}>
+                  <th style={{ padding: '14px 18px', fontWeight: 600 }}>Date & Time</th>
+                  <th style={{ padding: '14px 18px', fontWeight: 600 }}>Video Source</th>
+                  <th style={{ padding: '14px 18px', fontWeight: 600 }}>Duration</th>
+                  <th style={{ padding: '14px 18px', fontWeight: 600 }}>Total Hens</th>
+                  <th style={{ padding: '14px 18px', fontWeight: 600 }}>Visible Heads</th>
+                  <th style={{ padding: '14px 18px', fontWeight: 600 }}>Notes</th>
+                  <th style={{ padding: '14px 18px', fontWeight: 600, textAlign: 'center' }}>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {savedSessions.map((session) => (
+                  <tr
+                    key={session.id}
+                    style={{
+                      borderBottom: '1px solid rgba(255,255,255,0.05)',
+                      transition: 'background 0.2s'
+                    }}
+                  >
+                    <td style={{ padding: '14px 18px', whiteSpace: 'nowrap' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, color: 'var(--text-primary)' }}>
+                        <Calendar size={14} color="#10b981" />
+                        {new Date(session.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                      </div>
+                      <div style={{ fontSize: '0.78rem', color: '#94a3b8', marginLeft: 20 }}>
+                        {new Date(session.created_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                      </div>
+                    </td>
+                    <td style={{ padding: '14px 18px' }}>
+                      <span
+                        style={{
+                          fontSize: '0.75rem',
+                          fontWeight: 700,
+                          padding: '3px 8px',
+                          borderRadius: 6,
+                          background: session.source_type === 'LIVE_CAMERA' ? 'rgba(239,68,68,0.15)' : 'rgba(59,130,246,0.15)',
+                          color: session.source_type === 'LIVE_CAMERA' ? '#ef4444' : '#60a5fa',
+                          border: `1px solid ${session.source_type === 'LIVE_CAMERA' ? 'rgba(239,68,68,0.3)' : 'rgba(59,130,246,0.3)'}`
+                        }}
+                      >
+                        {session.source_type === 'LIVE_CAMERA' ? '📷 LIVE CAMERA' : (session.source_type === 'DEMO_VIDEO' ? '🎬 DEMO VIDEO' : '☁️ UPLOADED VIDEO')}
+                      </span>
+                      {session.video_filename && (
+                        <div style={{ fontSize: '0.78rem', color: '#cbd5e1', marginTop: 4, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {session.video_filename}
+                        </div>
+                      )}
+                    </td>
+                    <td style={{ padding: '14px 18px', whiteSpace: 'nowrap', color: '#f1f5f9' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <Clock size={14} color="#f59e0b" />
+                        {session.video_duration > 0 ? `${session.video_duration.toFixed(1)}s` : 'Live / Continuous'}
+                      </div>
+                    </td>
+                    <td style={{ padding: '14px 18px' }}>
+                      <span style={{ fontSize: '1.25rem', fontWeight: 800, color: '#10b981' }}>
+                        {session.total_count}
+                      </span>
+                      <span style={{ fontSize: '0.75rem', color: '#94a3b8', marginLeft: 4 }}>hens</span>
+                    </td>
+                    <td style={{ padding: '14px 18px' }}>
+                      <span style={{ fontSize: '1.1rem', fontWeight: 700, color: '#3b82f6' }}>
+                        {session.visible_count}
+                      </span>
+                    </td>
+                    <td style={{ padding: '14px 18px', color: '#cbd5e1', fontSize: '0.82rem', maxWidth: 180 }}>
+                      {session.notes || '—'}
+                    </td>
+                    <td style={{ padding: '14px 18px', textAlign: 'center' }}>
+                      <button
+                        type="button"
+                        onClick={() => deleteSessionRecord(session.id)}
+                        title="Delete record"
+                        style={{
+                          background: 'rgba(239,68,68,0.1)',
+                          border: '1px solid rgba(239,68,68,0.3)',
+                          color: '#ef4444',
+                          padding: '6px 10px',
+                          borderRadius: 8,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
 
       <style>{`
         @keyframes live-pulse { 0%,100% { opacity:1; box-shadow: 0 0 8px #ef4444; } 50% { opacity:0.5; box-shadow: 0 0 18px #ef4444; } }

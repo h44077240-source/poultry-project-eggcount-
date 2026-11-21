@@ -352,3 +352,29 @@ class DepartmentResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ─── Hen Count Sessions ───────────────────────────────────────────────────────
+
+class HenCountSessionCreate(BaseModel):
+    source_type: str  # "UPLOADED_VIDEO", "LIVE_CAMERA", "DEMO_VIDEO"
+    video_filename: Optional[str] = None
+    video_duration: float = 0.0
+    total_count: int = 0
+    visible_count: int = 0
+    notes: Optional[str] = None
+
+
+class HenCountSessionResponse(BaseModel):
+    id: str
+    created_at: datetime
+    source_type: str
+    video_filename: Optional[str] = None
+    video_duration: float = 0.0
+    total_count: int = 0
+    visible_count: int = 0
+    notes: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+

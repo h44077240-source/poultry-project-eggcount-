@@ -7,6 +7,11 @@ from fastapi import APIRouter, HTTPException, UploadFile, File, Form, WebSocket,
 import tempfile
 
 from app.ai.optical_tracker import OpticalHenTracker
+from app.database.session import get_db
+from app.database.models import HenCountSession
+from app.schemas.schemas import HenCountSessionCreate, HenCountSessionResponse
+from sqlalchemy.orm import Session
+from fastapi import Depends
 
 router = APIRouter(prefix="/api/tracker", tags=["Hen Tracking"])
 
@@ -340,3 +345,47 @@ def tracker_diag(video_name: str = "demo_hen_video.mp4", step: str = "all"):
     except Exception as e:
         mark(f"EXCEPTION: {e}\n{traceback.format_exc()}")
         return {"success": False, "log": log, "error": str(e)}
+
+
+# ─── Hen Count Session History Endpoints ─────────────────────────────────────
+
+@router.post("/sessions", response_model=HenCountSessionResponse)
+def save_count_session(payload: HenCountSessionCreate, db: Session = Depends(get_db)):
+    """Save an AI hen counting session with date, duration, source type, and counts."""
+    session = HenCountSession(
+        id=str(uuid.uuid4()),
+        source_type=payload.source_type,
+        video_filename=payload.video_filename,
+        video_duration=round(payload.video_duration, 1),
+        total_count=payload.total_count,
+        visible_count=payload.visible_count,
+        notes=payload.notes,
+    )
+    db.add(session)
+    db.commit()
+    db.refresh(session)
+    return session
+
+
+@router.get("/sessions", response_model=list[HenCountSessionResponse])
+def get_count_sessions(limit: int = 50, db: Session = Depends(get_db)):
+    """Retrieve history of saved hen count sessions, ordered newest first."""
+    sessions = (
+        db.query(HenCountSession)
+        .order_by(HenCountSession.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+    return sessions
+
+
+@router.delete("/sessions/{session_id}")
+def delete_count_session(session_id: str, db: Session = Depends(get_db)):
+    """Delete a specific hen count record by ID."""
+    session = db.query(HenCountSession).filter(HenCountSession.id == session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session record not found")
+    db.delete(session)
+    db.commit()
+    return {"success": True, "message": "Record deleted successfully"}
+
