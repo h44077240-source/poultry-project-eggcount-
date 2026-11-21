@@ -135,6 +135,7 @@ class OpticalHenTracker:
                     self._zone = (int(fw * 0.01), int(fh * 0.01), int(fw * 0.99), int(fh * 0.99))
 
                     if is_comb_model:
+                        scale_factor = max(fw, fh) / 640.0
                         for box, conf in zip(boxes, confs):
                             x1, y1, x2, y2 = map(int, box)
                             hw = x2 - x1
@@ -143,11 +144,13 @@ class OpticalHenTracker:
                                 continue
                             cx = (x1 + x2) / 2.0
                             cy = (y1 + y2) / 2.0
+                            base_sz = max(24.0 * scale_factor, min(36.0 * scale_factor, max(hw, hh) + 2.0))
+                            hw_b, hh_b = base_sz / 2.0, base_sz / 2.0
                             box_final = [
-                                max(0.0, float(x1)),
-                                max(0.0, float(y1)),
-                                min(float(fw - 1), float(x2)),
-                                min(float(fh - 1), float(y2))
+                                max(0.0, float(cx - hw_b)),
+                                max(0.0, float(cy - hh_b)),
+                                min(float(fw - 1), float(cx + hw_b)),
+                                min(float(fh - 1), float(cy + hh_b))
                             ]
                             raw_dets.append({
                                 "box": box_final,
@@ -291,6 +294,7 @@ class OpticalHenTracker:
                         init_candidates = []
 
                         if is_comb_model:
+                            scale_factor = max(fw, fh) / 640.0
                             for box, conf in zip(boxes, confs):
                                 x1, y1, x2, y2 = map(int, box)
                                 hw = x2 - x1
@@ -299,11 +303,13 @@ class OpticalHenTracker:
                                     continue
                                 cx = (x1 + x2) / 2.0
                                 cy = (y1 + y2) / 2.0
+                                base_sz = max(24.0 * scale_factor, min(36.0 * scale_factor, max(hw, hh) + 2.0))
+                                hw_b, hh_b = base_sz / 2.0, base_sz / 2.0
                                 box_final = [
-                                    max(0.0, float(x1)),
-                                    max(0.0, float(y1)),
-                                    min(float(fw - 1), float(x2)),
-                                    min(float(fh - 1), float(y2))
+                                    max(0.0, float(cx - hw_b)),
+                                    max(0.0, float(cy - hh_b)),
+                                    min(float(fw - 1), float(cx + hw_b)),
+                                    min(float(fh - 1), float(cy + hh_b))
                                 ]
                                 init_candidates.append({
                                     "box": box_final,

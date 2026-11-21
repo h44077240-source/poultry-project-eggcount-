@@ -340,7 +340,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
                 bx_list = [[b[0], b[1], b[2] - b[0], b[3] - b[1]] for b in bx]
                 cf_list = [float(c) for c in cf]
 
-            # Fast direct path for trained HEN_COMB model (matches Hugging Face precision 100%)
+            # Fast direct path for trained HEN_COMB model (compact head box matching munnadi screenshot)
             if is_comb_model:
                 candidates = []
                 for b, conf in zip(bx_list, cf_list):
@@ -350,16 +350,15 @@ def _sync_generate_frames(video_source, ref_settings=None):
                     bh = float(b[3])
                     if bw < 4 or bh < 4:
                         continue
-                    x1_s = bx1 * scale_x_det
-                    y1_s = by1 * scale_y_det
-                    x2_s = (bx1 + bw) * scale_x_det
-                    y2_s = (by1 + bh) * scale_y_det
-                    cx = (x1_s + x2_s) / 2.0
-                    cy = (y1_s + y2_s) / 2.0
+                    cx = (bx1 + bw / 2.0) * scale_x_det
+                    cy = (by1 + bh / 2.0) * scale_y_det
                     if not is_in_zone(cx, cy):
                         continue
+                    # Compact head/comb box sizing (exactly matching munnadi 24-34px screenshot)
+                    base_sz = max(24.0, min(34.0, max(bw * scale_x_det, bh * scale_y_det) + 2.0))
+                    hw, hh = base_sz / 2.0, base_sz / 2.0
                     candidates.append({
-                        "box": [x1_s, y1_s, x2_s, y2_s],
+                        "box": [cx - hw, cy - hh, cx + hw, cy + hh],
                         "center": (cx, cy),
                         "conf": conf,
                         "red_prom": 99.0
@@ -367,7 +366,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
                 candidates.sort(key=lambda d: d["conf"], reverse=True)
                 dedup = []
                 for d in candidates:
-                    if not any(math.hypot(d["center"][0] - ex["center"][0], d["center"][1] - ex["center"][1]) < 20.0 for ex in dedup):
+                    if not any(math.hypot(d["center"][0] - ex["center"][0], d["center"][1] - ex["center"][1]) < 22.0 for ex in dedup):
                         dedup.append(d)
                 return dedup
 
