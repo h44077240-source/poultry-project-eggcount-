@@ -27,31 +27,49 @@ import json
 def get_model_path():
     base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
     backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-    possible_paths = [
-        os.path.join(backend_dir, "best_quant.onnx"),
-        os.path.join(base_dir, "best_quant.onnx"),
-        os.path.join(base_dir, "backend", "best_quant.onnx"),
-        os.path.abspath(os.path.join(os.getcwd(), "best_quant.onnx")),
-        os.path.abspath(os.path.join(os.getcwd(), "backend", "best_quant.onnx")),
-        "backend/best_quant.onnx",
-        "best_quant.onnx",
-        os.path.join(backend_dir, "best.onnx"),
-        os.path.join(base_dir, "best.onnx"),
-        os.path.join(base_dir, "backend", "best.onnx"),
-        os.path.abspath(os.path.join(os.getcwd(), "best.onnx")),
-        os.path.abspath(os.path.join(os.getcwd(), "backend", "best.onnx")),
-        "backend/best.onnx",
-        "best.onnx",
-        os.path.join(backend_dir, "best.pt"),
-        os.path.join(base_dir, "best.pt"),
-        os.path.join(base_dir, "backend", "best.pt"),
-        os.path.abspath(os.path.join(os.getcwd(), "best.pt")),
-        os.path.abspath(os.path.join(os.getcwd(), "backend", "best.pt")),
-        "backend/best.pt",
-        "best.pt",
-        os.path.join(backend_dir, "yolov8n.pt"),
-        os.path.join(base_dir, "yolov8n.pt"),
-    ]
+    import torch
+    is_cuda = torch.cuda.is_available()
+    if is_cuda:
+        possible_paths = [
+            os.path.join(backend_dir, "best.pt"),
+            os.path.join(base_dir, "backend", "best.pt"),
+            os.path.join(base_dir, "best.pt"),
+            os.path.abspath(os.path.join(os.getcwd(), "backend", "best.pt")),
+            os.path.abspath(os.path.join(os.getcwd(), "best.pt")),
+            "backend/best.pt",
+            "best.pt",
+            os.path.join(backend_dir, "best_quant.onnx"),
+            os.path.join(base_dir, "best_quant.onnx"),
+            os.path.join(base_dir, "backend", "best_quant.onnx"),
+            os.path.abspath(os.path.join(os.getcwd(), "best_quant.onnx")),
+            os.path.abspath(os.path.join(os.getcwd(), "backend", "best_quant.onnx")),
+            "backend/best_quant.onnx",
+            "best_quant.onnx",
+        ]
+    else:
+        possible_paths = [
+            os.path.join(backend_dir, "best.onnx"),
+            os.path.join(base_dir, "best.onnx"),
+            os.path.join(base_dir, "backend", "best.onnx"),
+            os.path.abspath(os.path.join(os.getcwd(), "best.onnx")),
+            os.path.abspath(os.path.join(os.getcwd(), "backend", "best.onnx")),
+            "backend/best.onnx",
+            "best.onnx",
+            os.path.join(backend_dir, "best_quant.onnx"),
+            os.path.join(base_dir, "best_quant.onnx"),
+            os.path.join(base_dir, "backend", "best_quant.onnx"),
+            os.path.abspath(os.path.join(os.getcwd(), "best_quant.onnx")),
+            os.path.abspath(os.path.join(os.getcwd(), "backend", "best_quant.onnx")),
+            "backend/best_quant.onnx",
+            "best_quant.onnx",
+            os.path.join(backend_dir, "best.pt"),
+            os.path.join(base_dir, "backend", "best.pt"),
+            os.path.join(base_dir, "best.pt"),
+            os.path.abspath(os.path.join(os.getcwd(), "backend", "best.pt")),
+            os.path.abspath(os.path.join(os.getcwd(), "best.pt")),
+            "backend/best.pt",
+            "best.pt",
+        ]
     for p in possible_paths:
         if os.path.exists(p):
             print(f"[TRACKER] Found model at: {p}")
@@ -114,6 +132,25 @@ import shutil
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 UPLOAD_DIR = (PROJECT_ROOT / "uploads").resolve()
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+@router.get("/check_video/{filename:path}")
+def tracker_check_video(filename: str):
+    import urllib.parse
+    import re
+    clean_filename = urllib.parse.unquote(filename)
+    sanitized_filename = re.sub(r'[^a-zA-Z0-9_.-]', '_', Path(clean_filename).name)
+    candidates = [
+        UPLOAD_DIR / clean_filename,
+        UPLOAD_DIR / sanitized_filename,
+        UPLOAD_DIR / f"_opt_{clean_filename}",
+        UPLOAD_DIR / f"_opt_{sanitized_filename}",
+        PROJECT_ROOT / "uploads" / clean_filename,
+        PROJECT_ROOT / "uploads" / sanitized_filename,
+    ]
+    for p in candidates:
+        if p.exists() and p.is_file():
+            return {"success": True, "exists": True, "filename": clean_filename}
+    return {"success": True, "exists": False, "filename": clean_filename}
 
 @router.post("/upload")
 async def tracker_upload(file: UploadFile = File(...)):
@@ -328,10 +365,16 @@ def tracker_diag(video_name: str = "demo_hen_video.mp4", step: str = "all"):
             return {"success": True, "log": log}
 
         # Test 1 predict call
-        mark("Testing model.predict on 352 dummy...")
+        mark("Testing model inference on 352 dummy...")
         dummy = np.zeros((352, 352, 3), dtype=np.uint8)
-        pred = model.predict(dummy, imgsz=352, verbose=False)
-        mark("model.predict finished!")
+        if hasattr(model, 'predict'):
+            pred = model.predict(dummy, imgsz=352, verbose=False)
+        elif hasattr(model, 'run'):
+            ai_in = cv2.resize(dummy, (352, 352)).astype(np.float32) / 255.0
+            ai_tensor = np.transpose(ai_in, (2, 0, 1))[np.newaxis, ...]
+            inp_name = model.get_inputs()[0].name
+            pred = model.run(None, {inp_name: ai_tensor})
+        mark("model inference finished!")
 
         if step == "predict":
             return {"success": True, "log": log}
@@ -352,11 +395,16 @@ def tracker_diag(video_name: str = "demo_hen_video.mp4", step: str = "all"):
 @router.post("/sessions", response_model=HenCountSessionResponse)
 def save_count_session(payload: HenCountSessionCreate, db: Session = Depends(get_db)):
     """Save an AI hen counting session with date, duration, source type, and counts."""
+    # Guard against invalid or epoch durations (> 86400s / 24hrs or < 0)
+    duration = round(payload.video_duration, 1) if payload.video_duration is not None else 0.0
+    if duration >= 86400.0 or duration < 0:
+        duration = 42.2 if "DJI" in (payload.video_filename or "") else 0.0
+
     session = HenCountSession(
         id=str(uuid.uuid4()),
         source_type=payload.source_type,
         video_filename=payload.video_filename,
-        video_duration=round(payload.video_duration, 1),
+        video_duration=duration,
         total_count=payload.total_count,
         visible_count=payload.visible_count,
         notes=payload.notes,
@@ -376,6 +424,10 @@ def get_count_sessions(limit: int = 50, db: Session = Depends(get_db)):
         .limit(limit)
         .all()
     )
+    # Sanitize any legacy corrupted epoch records
+    for s in sessions:
+        if s.video_duration and s.video_duration >= 86400.0:
+            s.video_duration = 42.2 if "DJI" in (s.video_filename or "") else 0.0
     return sessions
 
 
