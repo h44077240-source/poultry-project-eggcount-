@@ -111,12 +111,12 @@ class OpticalHenTracker:
 
             try:
                 fh, fw = f.shape[:2]
-                infer_imgsz = 352
+                infer_imgsz = 640
                 is_comb_model = (
                     hasattr(self.model, 'names') and any('comb' in str(v).lower() for v in getattr(self.model, 'names', {}).values())
                 ) or ('best' in str(self.MODEL_PATH or '').lower())
 
-                infer_conf = 0.20 if is_comb_model else 0.10
+                infer_conf = 0.10
                 results = self.model.predict(
                     source=f,
                     verbose=False,
@@ -279,7 +279,7 @@ class OpticalHenTracker:
                     is_comb_model = (
                         hasattr(self.model, 'names') and any('comb' in str(v).lower() for v in getattr(self.model, 'names', {}).values())
                     ) or ('best' in str(self.MODEL_PATH or '').lower())
-                    init_conf = 0.20 if is_comb_model else 0.10
+                    init_conf = 0.10
                     init_res = self.model.predict(
                         source=frame,
                         verbose=False,
@@ -528,8 +528,8 @@ class OpticalHenTracker:
                         hdata["lost"] += 1
 
                 # Stage 2: Register New Hen anywhere in the camera view
-                min_new_dist = 36.0
-                unmatched_fresh = [det for det_idx, det in enumerate(fresh) if det_idx not in used_dets and det.get("conf", 0.0) >= 0.14]
+                min_new_dist = 28.0
+                unmatched_fresh = [det for det_idx, det in enumerate(fresh) if det_idx not in used_dets and det.get("conf", 0.0) >= 0.10]
                 unmatched_fresh.sort(key=lambda d: -d["center"][1])
                 for det in unmatched_fresh:
                     cx, cy = det["center"]

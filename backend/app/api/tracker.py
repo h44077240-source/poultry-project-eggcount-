@@ -48,13 +48,6 @@ def get_model_path():
         ]
     else:
         possible_paths = [
-            os.path.join(backend_dir, "best_quant.onnx"),
-            os.path.join(base_dir, "best_quant.onnx"),
-            os.path.join(base_dir, "backend", "best_quant.onnx"),
-            os.path.abspath(os.path.join(os.getcwd(), "best_quant.onnx")),
-            os.path.abspath(os.path.join(os.getcwd(), "backend", "best_quant.onnx")),
-            "backend/best_quant.onnx",
-            "best_quant.onnx",
             os.path.join(backend_dir, "best.onnx"),
             os.path.join(base_dir, "best.onnx"),
             os.path.join(base_dir, "backend", "best.onnx"),
@@ -62,6 +55,13 @@ def get_model_path():
             os.path.abspath(os.path.join(os.getcwd(), "backend", "best.onnx")),
             "backend/best.onnx",
             "best.onnx",
+            os.path.join(backend_dir, "best_quant.onnx"),
+            os.path.join(base_dir, "best_quant.onnx"),
+            os.path.join(base_dir, "backend", "best_quant.onnx"),
+            os.path.abspath(os.path.join(os.getcwd(), "best_quant.onnx")),
+            os.path.abspath(os.path.join(os.getcwd(), "backend", "best_quant.onnx")),
+            "backend/best_quant.onnx",
+            "best_quant.onnx",
             os.path.join(backend_dir, "best.pt"),
             os.path.join(base_dir, "backend", "best.pt"),
             os.path.join(base_dir, "best.pt"),
