@@ -115,7 +115,7 @@ class OpticalHenTracker:
                 results = self.model.predict(
                     source=f,
                     verbose=False,
-                    conf=0.10,
+                    conf=0.035,
                     iou=0.40,
                     imgsz=infer_imgsz,
                     device=self.DEVICE
@@ -140,29 +140,29 @@ class OpticalHenTracker:
                     h_ch, s_ch, v_ch = cv2.split(hsv)
                     b_ch, g_ch, r_ch = cv2.split(f.astype(np.float32))
                     comb_red = (
-                        (((h_ch >= 150) | (h_ch <= 18)) & (s_ch > 28) & (v_ch > 38) & ((r_ch - g_ch) > 14)) |
-                        (((r_ch - np.maximum(g_ch, b_ch)) > 16) & (s_ch > 28) & (v_ch > 38))
+                        (((h_ch >= 148) | (h_ch <= 20)) & (s_ch > 22) & (v_ch > 30) & ((r_ch - g_ch) > 8)) |
+                        (((r_ch - np.maximum(g_ch, b_ch)) > 10) & (s_ch > 22) & (v_ch > 30))
                     )
 
                     for box, conf in zip(boxes, confs):
                         x1, y1, x2, y2 = map(int, box)
                         hw = x2 - x1
                         hh = y2 - y1
-                        if hw < 8 or hh < 8:
+                        if hw < 6 or hh < 6:
                             continue
                         if hw > max_comb_w or hh > max_comb_h or (hw * hh) > max_area:
                             continue
 
-                        search_hh = hh * 0.45 if hh > 40 else hh
+                        search_hh = hh * 0.50 if hh > 35 else hh
                         crop_red = comb_red[y1:min(fh - 1, int(y1 + search_hh)), x1:x2]
-                        if np.count_nonzero(crop_red) < 6:
+                        if np.count_nonzero(crop_red) < 4:
                             continue
 
                         ys, xs = np.where(crop_red)
                         scale_factor = max(fw, fh) / 640.0
                         cx = x1 + float(np.median(xs))
                         cy = y1 + float(np.median(ys))
-                        base_sz = 28.0 * scale_factor
+                        base_sz = 24.0 * scale_factor
 
                         hw_box = base_sz / 2.0
                         hh_box = base_sz / 2.0
