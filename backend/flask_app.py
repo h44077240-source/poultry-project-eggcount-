@@ -873,13 +873,24 @@ def upload_reference():
 @app.route('/upload', methods=['POST'])
 @app.route('/api/tracker/upload', methods=['POST'])
 def upload():
-    file = request.files.get('video') or request.files.get('file')
-    if not file:
+    file = None
+    if 'file' in request.files:
+        file = request.files['file']
+    elif 'video' in request.files:
+        file = request.files['video']
+    elif len(request.files) > 0:
+        file = next(iter(request.files.values()))
+
+    if not file or not getattr(file, 'filename', None):
         return jsonify({"success": False, "error": "No file uploaded"}), 400
-    filename = secure_filename(file.filename)
-    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+
+    import re
+    raw_name = file.filename or "video.mp4"
+    clean_name = re.sub(r'[^a-zA-Z0-9_.-]', '_', os.path.basename(raw_name))
+    safe_filename = clean_name or f"video_{int(time.time())}.mp4"
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], safe_filename)
     file.save(filepath)
-    return jsonify({"success": True, "filename": filename})
+    return jsonify({"success": True, "filename": safe_filename})
 
 @app.route('/stream/<filename>')
 def serve_video(filename):

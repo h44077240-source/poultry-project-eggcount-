@@ -321,6 +321,7 @@ export default function HenCombTrackingPage() {
     const activeBackendUrl = getTrackerBaseUrl()
     const formData = new FormData()
     formData.append('file', file)
+    formData.append('video', file)
 
     const xhr = new XMLHttpRequest()
     xhrRef.current = xhr
@@ -359,7 +360,14 @@ export default function HenCombTrackingPage() {
         }
       } else {
         setStreamMode(null)
-        setErrorMsg(`Server returned status code ${xhr.status}.`)
+        let serverError = ''
+        try {
+          const errObj = JSON.parse(xhr.responseText)
+          serverError = errObj.detail || errObj.error || errObj.message || ''
+        } catch (_) {
+          serverError = xhr.responseText || ''
+        }
+        setErrorMsg(serverError ? `Upload notice (${xhr.status}): ${serverError}` : `Server returned status code ${xhr.status}.`)
       }
     }
 

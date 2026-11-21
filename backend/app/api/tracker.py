@@ -152,16 +152,35 @@ def tracker_check_video(filename: str):
             return {"success": True, "exists": True, "filename": clean_filename}
     return {"success": True, "exists": False, "filename": clean_filename}
 
+from typing import Optional
+from fastapi import Request
+from fastapi.responses import JSONResponse
+
 @router.post("/upload")
-async def tracker_upload(file: UploadFile = File(...)):
+async def tracker_upload(
+    request: Request,
+    file: Optional[UploadFile] = File(None),
+    video: Optional[UploadFile] = File(None)
+):
     try:
         import re
-        raw_name = file.filename or "video.mp4"
+        actual_file = file or video
+        if actual_file is None:
+            form = await request.form()
+            for v in form.values():
+                if isinstance(v, UploadFile):
+                    actual_file = v
+                    break
+
+        if actual_file is None:
+            return JSONResponse(status_code=400, content={"success": False, "error": "No video file provided in upload"})
+
+        raw_name = actual_file.filename or "video.mp4"
         clean_name = re.sub(r'[^a-zA-Z0-9_.-]', '_', Path(raw_name).name)
-        safe_filename = clean_name or "video.mp4"
+        safe_filename = clean_name or f"video_{int(time.time())}.mp4"
         temp_path = UPLOAD_DIR / safe_filename
         with open(temp_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer, length=1024*1024)
+            shutil.copyfileobj(actual_file.file, buffer, length=1024*1024)
 
         # Remove any stale cached _opt_ file so freshly uploaded video is always used directly
         for old_opt in [UPLOAD_DIR / f"_opt_{safe_filename}", UPLOAD_DIR / f"_opt_{clean_name}"]:
@@ -182,7 +201,7 @@ async def tracker_upload(file: UploadFile = File(...)):
         # Return immediately so upload finishes in milliseconds without CPU bottleneck
         return {"success": True, "filename": safe_filename}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
 
 @router.post("/start_stream")
 async def tracker_start_stream(source: StreamSource):
