@@ -249,6 +249,7 @@ async def count_trays(
             result["tray_count"] = 0
             result["hen_count"] = 0
             
+        result.pop("annotated_frame", None)
         return result
     except Exception as e:
         import traceback
@@ -458,6 +459,13 @@ async def analyze_egg_image(
             detail=f"Unable to process AI response: {exc}",
         )
     except Exception as exc:
+        try:
+            from app.ai.yolo_detector import CustomYOLODetector
+            fallback_detector = CustomYOLODetector()
+            analysis = fallback_detector.analyze(image_bytes, content_type, target)
+            return EggAnalysisResponse(**analysis)
+        except Exception:
+            pass
         import traceback
         traceback.print_exc()
         err_msg = str(exc).lower()
@@ -530,6 +538,13 @@ async def analyze_dual_egg_images(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=f"Unable to process AI response: {exc}")
     except Exception as exc:
+        try:
+            from app.ai.yolo_detector import CustomYOLODetector
+            fallback_detector = CustomYOLODetector()
+            analysis = fallback_detector.analyze(image_bytes, content_type, target)
+            return EggAnalysisResponse(**analysis)
+        except Exception:
+            pass
         import traceback
         traceback.print_exc()
         err_msg = str(exc).lower()
@@ -602,6 +617,13 @@ async def chat_analyze(
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc))
     except Exception as exc:
+        try:
+            from app.ai.yolo_detector import CustomYOLODetector
+            fallback_detector = CustomYOLODetector()
+            analysis = fallback_detector.analyze(image_bytes, content_type, target)
+            return EggAnalysisResponse(**analysis)
+        except Exception:
+            pass
         import traceback
         traceback.print_exc()
         err_msg = str(exc).lower()
@@ -676,7 +698,8 @@ async def thermal_analyze(
             return {"success": True, "job_id": job_id, "is_video": True}
         else:
             result = await run_in_threadpool(process_thermal_image, image_bytes, min_temp, max_temp)
-            return result
+            result.pop("annotated_frame", None)
+        return result
             
     except Exception as exc:
         import traceback

@@ -124,7 +124,7 @@ class LiveHenTracker:
         model_path="backend/best.pt",
         video_source=0,
         imgsz=640,
-        conf_thresh=0.03,
+        conf_thresh=0.15,
         iou_thresh=0.40,
         show_trails=True,
         show_hud=True,
@@ -365,8 +365,8 @@ class LiveHenTracker:
         h_ch, s_ch, v_ch = cv2.split(hsv)
         b_ch, g_ch, r_ch = cv2.split(frame.astype(np.float32))
         comb_mask = (
-            (((h_ch >= 150) | (h_ch <= 15)) & (s_ch > 32) & (v_ch > 40) & ((r_ch - g_ch) > 12)) |
-            (((r_ch - np.maximum(g_ch, b_ch)) > 15) & (s_ch > 30) & (v_ch > 45))
+            (((h_ch >= 168) | (h_ch <= 8)) & (s_ch > 45) & (v_ch > 45) & ((r_ch - g_ch) > 20) & ((r_ch - b_ch) > 20)) |
+            (((r_ch - np.maximum(g_ch, b_ch)) > 25) & (s_ch > 50) & (v_ch > 50))
         )
 
         # Realistic comb/head dimensions relative to frame size
@@ -390,32 +390,41 @@ class LiveHenTracker:
             if bw > max_comb_w or bh > max_comb_h or (bw * bh) > max_area:
                 continue
 
-            # Redness verification: authentic comb pixels required
-            crop = comb_mask[by1:by2, bx1:bx2]
+            # If box covers whole hen, search top 35% where the comb crest is located
+            search_bh = int(bh * 0.35) if bh > 100 else bh
+            crop = comb_mask[by1:min(fh - 1, by1 + search_bh), bx1:bx2]
             comb_pixels = np.count_nonzero(crop)
-            if comb_pixels < 14 or (crop.size > 0 and (comb_pixels / float(crop.size)) < 0.025):
+            if comb_pixels < 14:
                 continue
 
             # Snug-fit comb contour refinement: shrink box tight to comb crest
             ys, xs = np.where(crop)
             if len(xs) >= 10:
-                pad = 3
-                rx1 = max(0, bx1 + int(np.percentile(xs, 3)) - pad)
-                rx2 = min(fw - 1, bx1 + int(np.percentile(xs, 97)) + pad)
-                ry1 = max(0, by1 + int(np.percentile(ys, 3)) - pad)
-                ry2 = min(fh - 1, by1 + int(np.percentile(ys, 97)) + pad)
-                if (rx2 - rx1) >= min_comb_sz and (ry2 - ry1) >= min_comb_sz:
-                    final_box = (rx1, ry1, rx2, ry2)
-                    comb_cx = int((rx1 + rx2) / 2.0)
-                    comb_cy = int((ry1 + ry2) / 2.0)
-                else:
-                    final_box = (bx1, by1, bx2, by2)
-                    comb_cx = int((bx1 + bx2) / 2.0)
-                    comb_cy = int((by1 + by2) / 2.0)
+                cx = bx1 + float(np.median(xs))
+                cy = by1 + float(np.median(ys))
+                rx1, ry1 = max(0, int(cx - 10)), max(0, int(cy - 10))
+                rx2, ry2 = min(fw, int(cx + 10)), min(fh, int(cy + 10))
+                bgr_crop = frame[ry1:ry2, rx1:rx2].astype(np.float32)
+                b_m, g_m, r_m = np.mean(bgr_crop[:, :, 0]), np.mean(bgr_crop[:, :, 1]), np.mean(bgr_crop[:, :, 2])
+                red_prom = r_m - max(b_m, g_m)
+                if red_prom < 20.0 or (r_m / (max(b_m, g_m) + 1e-4)) < 1.20:
+                    continue
+
+                w_comb = float(np.percentile(xs, 90) - np.percentile(xs, 10))
+                h_comb = float(np.percentile(ys, 90) - np.percentile(ys, 10))
+                scale_factor = max(fw, fh) / 640.0
+                base_sz = max(24.0 * scale_factor, min(34.0 * scale_factor, max(w_comb, h_comb) + 4.0))
+                hw_b, hh_b = base_sz / 2.0, base_sz / 2.0
+                final_box = (
+                    int(max(0, cx - hw_b)),
+                    int(max(0, cy - hh_b)),
+                    int(min(fw - 1, cx + hw_b)),
+                    int(min(fh - 1, cy + hh_b))
+                )
+                comb_cx = int(cx)
+                comb_cy = int(cy)
             else:
-                final_box = (bx1, by1, bx2, by2)
-                comb_cx = int((bx1 + bx2) / 2.0)
-                comb_cy = int((by1 + by2) / 2.0)
+                continue
 
             # Ceiling boundary check
             if final_box[1] <= 6:
@@ -434,7 +443,7 @@ class LiveHenTracker:
 
         # Deduplicate overlapping boxes on the same comb without rejecting neighboring hens
         raw_combs.sort(key=lambda d: d["conf"], reverse=True)
-        head_radius = max(18.0, 0.018 * fw)
+        head_radius = max(40.0, 0.045 * fw)
 
         kept = []
         for d in raw_combs:
@@ -513,20 +522,20 @@ class LiveHenTracker:
         cv2.resizeWindow(self.window_name, min(1280, frame_w), min(720, frame_h))
 
         # Dynamic search radius based on resolution (tight follow on hen head, zero jumping)
-        MAX_SEARCH = max(35.0, 0.04 * frame_w)
-        MIN_NEW_DIST = max(38.0, 0.04 * frame_w)
+        MAX_SEARCH = max(55.0, 0.05 * frame_w)
+        MIN_NEW_DIST = max(48.0, 0.045 * frame_w)
 
         # ─── Detection Zone: gates NEW hen registration only ───
         if frame_w < frame_h:
             ZONE_X1 = int(frame_w * 0.02)
-            ZONE_Y1 = int(frame_h * 0.08)
-            ZONE_X2 = int(frame_w * 0.85)
-            ZONE_Y2 = int(frame_h * 0.95)
+            ZONE_Y1 = int(frame_h * 0.06)
+            ZONE_X2 = int(frame_w * 0.72)
+            ZONE_Y2 = int(frame_h * 0.90)
         else:
             ZONE_X1 = int(frame_w * 0.04)
             ZONE_Y1 = int(frame_h * 0.08)
             ZONE_X2 = int(frame_w * 0.96)
-            ZONE_Y2 = int(frame_h * 0.92)
+            ZONE_Y2 = int(frame_h * 0.88)
 
         def is_in_zone(cx, cy):
             return ZONE_X1 <= cx <= ZONE_X2 and ZONE_Y1 <= cy <= ZONE_Y2
@@ -631,14 +640,14 @@ class LiveHenTracker:
                     cx, cy = det["center"]
                     raw_box = det["box"]
                     for num, data in self.hens.items():
-                        if data["lost_frames"] > 4:
+                        if data["lost_frames"] > 60:
                             continue
                         if not is_in_zone(data["center"][0], data["center"][1]):
                             continue
                         dist = math.hypot(cx - data["center"][0], cy - data["center"][1])
                         iou = box_iou(raw_box, data["box"])
 
-                        if dist <= MAX_SEARCH or iou > 0.20:
+                        if dist <= MAX_SEARCH or iou > 0.15:
                             cost = (1.0 - iou) * 0.3 + (dist / MAX_SEARCH) * 0.7
                             candidate_matches.append((cost, d_idx, num))
 
@@ -685,7 +694,7 @@ class LiveHenTracker:
 
             # ─── 4. Stage 2: New Hen Gating (Strict sequential IDs, no repeats, bottom-to-top) ───
             if frame_no > 1:
-                unmatched_dets = [det for d_idx, det in enumerate(detections) if d_idx not in matched_dets]
+                unmatched_dets = [det for d_idx, det in enumerate(detections) if d_idx not in matched_dets and det.get("conf", 0.0) >= 0.18]
                 unmatched_dets.sort(key=lambda d: -d["center"][1])
                 for det in unmatched_dets:
                     center = det["center"]
@@ -694,7 +703,7 @@ class LiveHenTracker:
                     # Only block if too close to an actively tracked hen (prevents duplicate boxes on same hen)
                     is_near_any = any(
                         math.hypot(center[0] - data["center"][0], center[1] - data["center"][1]) < MIN_NEW_DIST
-                        for data in self.hens.values() if data["lost_frames"] <= 4
+                        for data in self.hens.values() if data["lost_frames"] <= 60
                     )
                     if is_near_any:
                         continue
@@ -728,7 +737,7 @@ class LiveHenTracker:
                 cx, cy = self.hens[num]["center"]
                 b = self.hens[num]["box"]
                 left_zone = not is_in_zone(cx, cy)
-                lost_too_long = self.hens[num]["lost_frames"] > 4
+                lost_too_long = self.hens[num]["lost_frames"] > 60
                 outside = (b[2] < 0 or b[0] > frame_w or b[3] < 0 or b[1] > frame_h)
                 if left_zone or lost_too_long or outside:
                     del self.hens[num]
@@ -756,13 +765,13 @@ class LiveHenTracker:
             # ZONE FILTER: When a hen leaves the zone, its detection box disappears ("poiruranum")
             candidate_hens = [
                 (num, data) for num, data in self.hens.items()
-                if data["lost_frames"] == 0 and data.get("hits", 0) >= 1 and is_in_zone(data["center"][0], data["center"][1]) and data["box"][1] > 6
+                if data["lost_frames"] <= 2 and data.get("hits", 0) >= 1 and is_in_zone(data["center"][0], data["center"][1]) and data["box"][1] > 6
             ]
             candidate_hens.sort(key=lambda item: (item[1].get("hits", 0), -item[1].get("lost_frames", 0)), reverse=True)
 
             # Display Deduplication: suppress overlapping boxes for RENDERING ONLY
             active_render_hens = []
-            min_hen_dist = max(18.0, 0.015 * frame_w)
+            min_hen_dist = max(38.0, 0.035 * frame_w)
 
             for num, data in candidate_hens:
                 cx, cy = data["center"]
@@ -773,7 +782,7 @@ class LiveHenTracker:
                     v_box = v_data["box"]
                     dist = math.hypot(cx - v_cx, cy - v_cy)
                     iou = box_iou(box, v_box)
-                    if dist < min_hen_dist or iou > 0.30:
+                    if dist < min_hen_dist or iou > 0.25:
                         is_dup = True
                         break
                 if not is_dup:

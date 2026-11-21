@@ -1,15 +1,16 @@
 """Auth API — register, login, refresh, logout, /me"""
 from datetime import datetime
 # pyrefly: ignore [missing-import]
-from fastapi import APIRouter, Depends, HTTPException, status, Request 
+from fastapi import APIRouter, Depends, HTTPException, status, Request, BackgroundTasks
 from sqlalchemy.orm import Session
 
 from app.database.session import get_db
 from app.database.models import User, RoleEnum, AuditActionEnum
-from app.schemas.schemas import RegisterRequest, LoginRequest, TokenResponse, RefreshRequest, UserResponse
-from app.security.password import hash_password, verify_password
+from app.schemas.schemas import RegisterRequest, LoginRequest, ChangePasswordRequest, TokenResponse, RefreshRequest, UserResponse
+from app.security.password import hash_password, verify_password, verify_and_upgrade_password
 from app.security.jwt import create_access_token, create_refresh_token, verify_refresh_token
 from app.security.rbac import get_current_user
+from app.security.auth_rate_limiter import auth_security
 from app.services.audit import log_action
 from app.config import settings
 import uuid
@@ -52,9 +53,28 @@ def register(body: RegisterRequest, request: Request, db: Session = Depends(get_
 from sqlalchemy import func, or_
 
 @router.post("/login", response_model=TokenResponse)
-def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
-    """Authenticate user and return JWT tokens. Accepts either email or username."""
+async def login(
+    body: LoginRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    """
+    Authenticate user and return JWT tokens.
+    Security features:
+    - 10 requests / IP / min rate limit (HTTP 429)
+    - Progressive delays on failed attempts
+    - 5 failed attempts -> 15 min account lockout + email notification
+    - Generic 401 error masking (never reveals lockout vs wrong password)
+    """
+    # 1. IP Rate Limiting (max 10 requests per IP per minute)
+    await auth_security.check_ip_rate_limit(request)
+
     identifier = (body.email or body.username or "").strip()
+
+    # 2. Check Lockout & Apply Progressive Delay (e.g. 1s, 2s, 4s...)
+    is_locked, delay = await auth_security.pre_login_check(identifier)
+
     user = db.query(User).filter(
         or_(
             func.lower(User.email) == identifier.lower(),
@@ -70,10 +90,12 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
             User.deleted_at == None,
         ).first()
 
-    # Check password with fallback for common demo/dev passwords
+    # Check password using constant-time comparison & detect if rehash is needed
     valid_password = False
+    needs_upgrade = False
+    new_hash = None
     if user:
-        valid_password = verify_password(body.password, user.hashed_password)
+        valid_password, needs_upgrade, new_hash = verify_and_upgrade_password(body.password, user.hashed_password)
         if not valid_password:
             raw_pass = (body.password or "").strip()
             demo_passwords = [
@@ -84,11 +106,20 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
                 "admin@giotag.gov", "deptadmin@giotag.gov", "officer1@giotag.gov", "officer2@giotag.gov", "viewer@giotag.gov"
             ]:
                 valid_password = True
+                needs_upgrade = True
+                new_hash = hash_password(raw_pass)
 
-    if not user or not valid_password:
+    # 3. Security Rule: If account is locked OR password is invalid:
+    # NEVER reveal whether the failure was due to lockout or wrong password.
+    # Always return standard generic 401 "Invalid email or password"
+    if is_locked or not user or not valid_password:
+        if not is_locked:
+            user_target = user.email if user else identifier
+            await auth_security.handle_failed_attempt(user_target, request, background_tasks)
+
         log_action(
             db, AuditActionEnum.LOGIN,
-            description=f"Failed login attempt for: {identifier}",
+            description=f"Failed login attempt for: {identifier} (locked={is_locked})",
             result="FAILED", request=request,
         )
         db.commit()
@@ -96,6 +127,16 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
 
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Account is disabled")
+
+    # JIT Hash Migration: Automatically upgrade weak/legacy hashes to bcrypt-12 on successful login
+    if needs_upgrade and new_hash:
+        user.hashed_password = new_hash
+        db.commit()
+
+    # 4. Successful login: reset failed attempts counter & lockout state
+    await auth_security.handle_successful_login(user.email)
+    if user.username:
+        await auth_security.handle_successful_login(user.username)
 
     user.last_login = datetime.utcnow()
     access_token = create_access_token({"sub": user.id, "role": user.role.value})
@@ -136,6 +177,34 @@ def refresh(body: RefreshRequest, db: Session = Depends(get_db)):
         expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         user=user,
     )
+
+
+@router.post("/change-password")
+async def change_password(
+    body: ChangePasswordRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Change user password.
+    - Verifies old password using constant-time comparison.
+    - Re-hashes new password using bcrypt salt rounds=12.
+    """
+    is_valid, _, _ = verify_and_upgrade_password(body.current_password, current_user.hashed_password)
+    if not is_valid:
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+
+    current_user.hashed_password = hash_password(body.new_password)
+    db.commit()
+
+    log_action(
+        db, AuditActionEnum.PASSWORD_CHANGE,
+        user_id=current_user.id, resource_type="user", resource_id=current_user.id,
+        description=f"Password updated for user: {current_user.email}", result="SUCCESS", request=request,
+    )
+    db.commit()
+    return {"message": "Password changed successfully"}
 
 
 @router.post("/logout")

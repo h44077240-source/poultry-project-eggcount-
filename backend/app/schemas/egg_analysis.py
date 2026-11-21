@@ -16,6 +16,8 @@ class EggAnalysisResponse(BaseModel):
     success: bool = True
     egg_count: int = Field(default=0, ge=0, description="Number of individual visible eggs")
     tray_count: int = Field(default=0, ge=0, description="Number of physical egg trays")
+    expected_egg_count: Optional[int] = Field(default=0, ge=0, description="Expected egg count (tray_count * 30)")
+    missing_egg_count: Optional[int] = Field(default=0, ge=0, description="Missing egg count (expected - detected)")
     hen_count: int = Field(default=0, ge=0, description="Number of hens")
     tray_types: TrayTypes = Field(default_factory=TrayTypes)
     confidence: Literal["high", "medium", "low"] = Field(
