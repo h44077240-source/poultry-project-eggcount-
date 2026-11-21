@@ -111,11 +111,16 @@ class OpticalHenTracker:
 
             try:
                 fh, fw = f.shape[:2]
-                infer_imgsz = 352
+                infer_imgsz = 640
+                is_comb_model = (
+                    hasattr(self.model, 'names') and any('comb' in str(v).lower() for v in getattr(self.model, 'names', {}).values())
+                ) or ('best' in str(self.MODEL_PATH or '').lower())
+
+                infer_conf = 0.20 if is_comb_model else 0.10
                 results = self.model.predict(
                     source=f,
                     verbose=False,
-                    conf=0.10,
+                    conf=infer_conf,
                     iou=0.35,
                     imgsz=infer_imgsz,
                     device=self.DEVICE
@@ -129,75 +134,98 @@ class OpticalHenTracker:
                     # Full Camera Zone coverage: allows hen detection wherever shown in live camera!
                     self._zone = (int(fw * 0.01), int(fh * 0.01), int(fw * 0.99), int(fh * 0.99))
 
-                    hsv = cv2.cvtColor(f, cv2.COLOR_BGR2HSV)
-                    h_ch, s_ch, v_ch = cv2.split(hsv)
-                    b_ch, g_ch, r_ch = cv2.split(f.astype(np.float32))
-                    # Vascular crimson comb mask tuned for live webcams / phone camera sensors
-                    comb_red = (
-                        (((h_ch >= 162) | (h_ch <= 15)) & (s_ch > 28) & (v_ch > 30) & ((r_ch - g_ch) > 10) & ((r_ch - b_ch) > 10)) |
-                        (((r_ch - np.maximum(g_ch, b_ch)) > 14) & (s_ch > 28) & (v_ch > 35))
-                    )
-
-                    for box, conf in zip(boxes, confs):
-                        x1, y1, x2, y2 = map(int, box)
-                        hw = x2 - x1
-                        hh = y2 - y1
-                        if hw < 8 or hh < 8:
-                            continue
-
-                        # Restrict comb crest search strictly to top 35% of the hen
-                        search_hh = hh * 0.35 if hh > 40 else hh
-                        crop_red = comb_red[y1:min(fh - 1, int(y1 + search_hh)), x1:x2]
-                        if np.count_nonzero(crop_red) < 8:
-                            continue
-
-                        ys, xs = np.where(crop_red)
-                        scale_factor = max(fw, fh) / 640.0
-                        if len(xs) >= 6:
-                            cx = x1 + float(np.median(xs))
-                            cy = y1 + float(np.median(ys))
-                            w_comb = float(np.percentile(xs, 90) - np.percentile(xs, 10))
-                            h_comb = float(np.percentile(ys, 90) - np.percentile(ys, 10))
-                            base_sz = max(24.0 * scale_factor, min(48.0 * scale_factor, max(w_comb, h_comb) + 6.0))
-                        else:
+                    if is_comb_model:
+                        for box, conf in zip(boxes, confs):
+                            x1, y1, x2, y2 = map(int, box)
+                            hw = x2 - x1
+                            hh = y2 - y1
+                            if hw < 4 or hh < 4:
+                                continue
                             cx = (x1 + x2) / 2.0
                             cy = (y1 + y2) / 2.0
-                            base_sz = max(24.0 * scale_factor, min(48.0 * scale_factor, max(hw, hh) + 6.0))
+                            box_final = [
+                                max(0.0, float(x1)),
+                                max(0.0, float(y1)),
+                                min(float(fw - 1), float(x2)),
+                                min(float(fh - 1), float(y2))
+                            ]
+                            raw_dets.append({
+                                "box": box_final,
+                                "center": (cx, cy),
+                                "conf": float(conf),
+                                "diag": math.hypot(box_final[2] - box_final[0], box_final[3] - box_final[1])
+                            })
+                    else:
+                        hsv = cv2.cvtColor(f, cv2.COLOR_BGR2HSV)
+                        h_ch, s_ch, v_ch = cv2.split(hsv)
+                        b_ch, g_ch, r_ch = cv2.split(f.astype(np.float32))
+                        # Vascular crimson comb mask tuned for live webcams / phone camera sensors
+                        comb_red = (
+                            (((h_ch >= 162) | (h_ch <= 15)) & (s_ch > 28) & (v_ch > 30) & ((r_ch - g_ch) > 10) & ((r_ch - b_ch) > 10)) |
+                            (((r_ch - np.maximum(g_ch, b_ch)) > 14) & (s_ch > 28) & (v_ch > 35))
+                        )
 
-                        # Biological red prominence check against background
-                        rx1, ry1 = max(0, int(cx - 10)), max(0, int(cy - 10))
-                        rx2, ry2 = min(fw, int(cx + 10)), min(fh, int(cy + 10))
-                        bgr_crop = f[ry1:ry2, rx1:rx2].astype(np.float32)
-                        b_m, g_m, r_m = np.mean(bgr_crop[:, :, 0]), np.mean(bgr_crop[:, :, 1]), np.mean(bgr_crop[:, :, 2])
-                        red_prom = r_m - max(b_m, g_m)
-                        if red_prom < 11.0 or (r_m / (max(b_m, g_m) + 1e-4)) < 1.12:
-                            continue
+                        for box, conf in zip(boxes, confs):
+                            x1, y1, x2, y2 = map(int, box)
+                            hw = x2 - x1
+                            hh = y2 - y1
+                            if hw < 8 or hh < 8:
+                                continue
 
-                        hw_box = base_sz / 2.0
-                        hh_box = base_sz / 2.0
-                        box_final = [
-                            max(0.0, float(cx - hw_box)),
-                            max(0.0, float(cy - hw_box)),
-                            min(float(fw - 1), float(cx + hw_box)),
-                            min(float(fh - 1), float(cy + hw_box))
-                        ]
+                            # Restrict comb crest search strictly to top 35% of the hen
+                            search_hh = hh * 0.35 if hh > 40 else hh
+                            crop_red = comb_red[y1:min(fh - 1, int(y1 + search_hh)), x1:x2]
+                            if np.count_nonzero(crop_red) < 8:
+                                continue
 
-                        raw_dets.append({
-                            "box": box_final,
-                            "center": (cx, cy),
-                            "conf": float(conf),
-                            "diag": math.hypot(box_final[2] - box_final[0], box_final[3] - box_final[1])
-                        })
+                            ys, xs = np.where(crop_red)
+                            scale_factor = max(fw, fh) / 640.0
+                            if len(xs) >= 6:
+                                cx = x1 + float(np.median(xs))
+                                cy = y1 + float(np.median(ys))
+                                w_comb = float(np.percentile(xs, 90) - np.percentile(xs, 10))
+                                h_comb = float(np.percentile(ys, 90) - np.percentile(ys, 10))
+                                base_sz = max(24.0 * scale_factor, min(48.0 * scale_factor, max(w_comb, h_comb) + 6.0))
+                            else:
+                                cx = (x1 + x2) / 2.0
+                                cy = (y1 + y2) / 2.0
+                                base_sz = max(24.0 * scale_factor, min(48.0 * scale_factor, max(hw, hh) + 6.0))
 
-                # Deduplicate: strictly ONE box per hen head (minimum 32px separation)
+                            # Biological red prominence check against background
+                            rx1, ry1 = max(0, int(cx - 10)), max(0, int(cy - 10))
+                            rx2, ry2 = min(fw, int(cx + 10)), min(fh, int(cy + 10))
+                            bgr_crop = f[ry1:ry2, rx1:rx2].astype(np.float32)
+                            b_m, g_m, r_m = np.mean(bgr_crop[:, :, 0]), np.mean(bgr_crop[:, :, 1]), np.mean(bgr_crop[:, :, 2])
+                            red_prom = r_m - max(b_m, g_m)
+                            if red_prom < 11.0 or (r_m / (max(b_m, g_m) + 1e-4)) < 1.12:
+                                continue
+
+                            hw_box = base_sz / 2.0
+                            hh_box = base_sz / 2.0
+                            box_final = [
+                                max(0.0, float(cx - hw_box)),
+                                max(0.0, float(cy - hw_box)),
+                                min(float(fw - 1), float(cx + hw_box)),
+                                min(float(fh - 1), float(cy + hw_box))
+                            ]
+
+                            raw_dets.append({
+                                "box": box_final,
+                                "center": (cx, cy),
+                                "conf": float(conf),
+                                "diag": math.hypot(box_final[2] - box_final[0], box_final[3] - box_final[1])
+                            })
+
+                # Deduplicate: strictly ONE box per hen head (minimum 20px separation)
                 raw_dets.sort(key=lambda d: d["conf"], reverse=True)
                 kept_dets = []
+                sep_thresh = 20.0 if is_comb_model else 32.0
                 for d in raw_dets:
                     c1 = d["center"]
                     overlap = False
                     for ex in kept_dets:
                         c2 = ex["center"]
-                        if math.hypot(c1[0] - c2[0], c1[1] - c2[1]) < 32.0:
+                        if math.hypot(c1[0] - c2[0], c1[1] - c2[1]) < sep_thresh:
                             overlap = True
                             break
                     if not overlap:
@@ -244,11 +272,15 @@ class OpticalHenTracker:
             # ─── Instant Initial Seed: Spatially ordered 1, 2, 3... ───
             if len(self.hens) == 0:
                 try:
-                    init_imgsz = 352
+                    init_imgsz = 640
+                    is_comb_model = (
+                        hasattr(self.model, 'names') and any('comb' in str(v).lower() for v in getattr(self.model, 'names', {}).values())
+                    ) or ('best' in str(self.MODEL_PATH or '').lower())
+                    init_conf = 0.20 if is_comb_model else 0.10
                     init_res = self.model.predict(
                         source=frame,
                         verbose=False,
-                        conf=0.10,
+                        conf=init_conf,
                         iou=0.35,
                         imgsz=init_imgsz,
                         device=self.DEVICE
@@ -256,58 +288,81 @@ class OpticalHenTracker:
                     if init_res and len(init_res) > 0 and init_res[0].boxes is not None:
                         boxes = init_res[0].boxes.xyxy.cpu().numpy()
                         confs = init_res[0].boxes.conf.cpu().numpy()
-                        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-                        h_ch, s_ch, v_ch = cv2.split(hsv)
-                        b_ch, g_ch, r_ch = cv2.split(frame.astype(np.float32))
-                        comb_red = (
-                            (((h_ch >= 162) | (h_ch <= 15)) & (s_ch > 28) & (v_ch > 30) & ((r_ch - g_ch) > 10) & ((r_ch - b_ch) > 10)) |
-                            (((r_ch - np.maximum(g_ch, b_ch)) > 14) & (s_ch > 28) & (v_ch > 35))
-                        )
                         init_candidates = []
-                        scale_factor = max(fw, fh) / 640.0
-                        for box, conf in zip(boxes, confs):
-                            x1, y1, x2, y2 = map(int, box)
-                            hw = x2 - x1
-                            hh = y2 - y1
-                            if hw < 8 or hh < 8:
-                                continue
-                            search_hh = hh * 0.35 if hh > 40 else hh
-                            crop_red = comb_red[y1:min(fh - 1, int(y1 + search_hh)), x1:x2]
-                            comb_px = np.count_nonzero(crop_red)
-                            if comb_px < 8:
-                                continue
-                            ys, xs = np.where(crop_red)
-                            if len(xs) >= 6:
-                                cx = x1 + float(np.median(xs))
-                                cy = y1 + float(np.median(ys))
-                                rx1, ry1 = max(0, int(cx - 10)), max(0, int(cy - 10))
-                                rx2, ry2 = min(fw, int(cx + 10)), min(fh, int(cy + 10))
-                                bgr_crop = frame[ry1:ry2, rx1:rx2].astype(np.float32)
-                                b_m, g_m, r_m = np.mean(bgr_crop[:, :, 0]), np.mean(bgr_crop[:, :, 1]), np.mean(bgr_crop[:, :, 2])
-                                red_prom = r_m - max(b_m, g_m)
-                                if red_prom < 11.0 or (r_m / (max(b_m, g_m) + 1e-4)) < 1.12:
+
+                        if is_comb_model:
+                            for box, conf in zip(boxes, confs):
+                                x1, y1, x2, y2 = map(int, box)
+                                hw = x2 - x1
+                                hh = y2 - y1
+                                if hw < 4 or hh < 4:
                                     continue
-                                w_comb = float(np.percentile(xs, 90) - np.percentile(xs, 10))
-                                h_comb = float(np.percentile(ys, 90) - np.percentile(ys, 10))
-                                base_sz = max(24.0 * scale_factor, min(48.0 * scale_factor, max(w_comb, h_comb) + 6.0))
-                                hw_b, hh_b = base_sz / 2.0, base_sz / 2.0
+                                cx = (x1 + x2) / 2.0
+                                cy = (y1 + y2) / 2.0
                                 box_final = [
-                                    max(0.0, float(cx - hw_b)),
-                                    max(0.0, float(cy - hh_b)),
-                                    min(float(fw - 1), float(cx + hw_b)),
-                                    min(float(fh - 1), float(cy + hh_b))
+                                    max(0.0, float(x1)),
+                                    max(0.0, float(y1)),
+                                    min(float(fw - 1), float(x2)),
+                                    min(float(fh - 1), float(y2))
                                 ]
                                 init_candidates.append({
                                     "box": box_final,
                                     "center": (cx, cy),
                                     "conf": float(conf)
                                 })
+                        else:
+                            hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+                            h_ch, s_ch, v_ch = cv2.split(hsv)
+                            b_ch, g_ch, r_ch = cv2.split(frame.astype(np.float32))
+                            comb_red = (
+                                (((h_ch >= 162) | (h_ch <= 15)) & (s_ch > 28) & (v_ch > 30) & ((r_ch - g_ch) > 10) & ((r_ch - b_ch) > 10)) |
+                                (((r_ch - np.maximum(g_ch, b_ch)) > 14) & (s_ch > 28) & (v_ch > 35))
+                            )
+                            scale_factor = max(fw, fh) / 640.0
+                            for box, conf in zip(boxes, confs):
+                                x1, y1, x2, y2 = map(int, box)
+                                hw = x2 - x1
+                                hh = y2 - y1
+                                if hw < 8 or hh < 8:
+                                    continue
+                                search_hh = hh * 0.35 if hh > 40 else hh
+                                crop_red = comb_red[y1:min(fh - 1, int(y1 + search_hh)), x1:x2]
+                                comb_px = np.count_nonzero(crop_red)
+                                if comb_px < 8:
+                                    continue
+                                ys, xs = np.where(crop_red)
+                                if len(xs) >= 6:
+                                    cx = x1 + float(np.median(xs))
+                                    cy = y1 + float(np.median(ys))
+                                    rx1, ry1 = max(0, int(cx - 10)), max(0, int(cy - 10))
+                                    rx2, ry2 = min(fw, int(cx + 10)), min(fh, int(cy + 10))
+                                    bgr_crop = frame[ry1:ry2, rx1:rx2].astype(np.float32)
+                                    b_m, g_m, r_m = np.mean(bgr_crop[:, :, 0]), np.mean(bgr_crop[:, :, 1]), np.mean(bgr_crop[:, :, 2])
+                                    red_prom = r_m - max(b_m, g_m)
+                                    if red_prom < 11.0 or (r_m / (max(b_m, g_m) + 1e-4)) < 1.12:
+                                        continue
+                                    w_comb = float(np.percentile(xs, 90) - np.percentile(xs, 10))
+                                    h_comb = float(np.percentile(ys, 90) - np.percentile(ys, 10))
+                                    base_sz = max(24.0 * scale_factor, min(48.0 * scale_factor, max(w_comb, h_comb) + 6.0))
+                                    hw_b, hh_b = base_sz / 2.0, base_sz / 2.0
+                                    box_final = [
+                                        max(0.0, float(cx - hw_b)),
+                                        max(0.0, float(cy - hh_b)),
+                                        min(float(fw - 1), float(cx + hw_b)),
+                                        min(float(fh - 1), float(cy + hh_b))
+                                    ]
+                                    init_candidates.append({
+                                        "box": box_final,
+                                        "center": (cx, cy),
+                                        "conf": float(conf)
+                                    })
 
                         # Deduplicate overlapping initial candidates
                         init_candidates.sort(key=lambda d: d["conf"], reverse=True)
                         dedup_init = []
+                        sep_init = 20.0 if is_comb_model else 32.0
                         for d in init_candidates:
-                            if not any(math.hypot(d["center"][0] - ex["center"][0], d["center"][1] - ex["center"][1]) < 32.0 for ex in dedup_init):
+                            if not any(math.hypot(d["center"][0] - ex["center"][0], d["center"][1] - ex["center"][1]) < sep_init for ex in dedup_init):
                                 dedup_init.append(d)
                         init_candidates = dedup_init
 

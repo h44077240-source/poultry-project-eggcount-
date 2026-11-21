@@ -1039,15 +1039,7 @@ export default function HenCombTrackingPage() {
       // Skip if off-screen in cover mode
       if (x + width < 0 || x > cw || y + height < 0 || y > ch) continue
 
-      // Tighten box to compact square-ish comb dimensions (kutti box on head only)
-      if (width > height * 1.25) {
-        const midX = x + width / 2
-        width = height * 1.15
-        x = midX - width / 2
-      } else if (height > width * 1.35) {
-        height = width * 1.25
-      }
-
+      // Natural comb bounding box matching YOLOv8 trained comb predictions
       liveCount++
       seqIndex++
 

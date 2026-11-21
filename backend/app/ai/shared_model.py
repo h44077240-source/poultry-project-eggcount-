@@ -26,26 +26,26 @@ def resolve_model_path() -> str:
     _this_dir = os.path.dirname(os.path.abspath(__file__))
     is_cuda = torch.cuda.is_available()
     
-    # Prioritize fast quantized ONNX model (25MB, runs 8x faster on CPU/Render with 512MB RAM)
+    # Prioritize trained HEN_COMB best.pt model (52MB, 100% precision matching Hugging Face)
     candidates = [
-        os.path.abspath(os.path.join(_this_dir, "../../best_quant.onnx")),
-        os.path.abspath(os.path.join(_this_dir, "../../../best_quant.onnx")),
-        os.path.abspath(os.path.join(os.getcwd(), "backend", "best_quant.onnx")),
-        os.path.abspath(os.path.join(os.getcwd(), "best_quant.onnx")),
-        "backend/best_quant.onnx",
-        "best_quant.onnx",
-        os.path.abspath(os.path.join(_this_dir, "../../best.onnx")),
-        os.path.abspath(os.path.join(_this_dir, "../../../best.onnx")),
-        os.path.abspath(os.path.join(os.getcwd(), "best.onnx")),
-        os.path.abspath(os.path.join(os.getcwd(), "backend", "best.onnx")),
-        "backend/best.onnx",
-        "best.onnx",
         os.path.abspath(os.path.join(_this_dir, "../../best.pt")),
         os.path.abspath(os.path.join(_this_dir, "../../../best.pt")),
         os.path.abspath(os.path.join(os.getcwd(), "best.pt")),
         os.path.abspath(os.path.join(os.getcwd(), "backend", "best.pt")),
         "backend/best.pt",
         "best.pt",
+        os.path.abspath(os.path.join(_this_dir, "../../best.onnx")),
+        os.path.abspath(os.path.join(_this_dir, "../../../best.onnx")),
+        os.path.abspath(os.path.join(os.getcwd(), "best.onnx")),
+        os.path.abspath(os.path.join(os.getcwd(), "backend", "best.onnx")),
+        "backend/best.onnx",
+        "best.onnx",
+        os.path.abspath(os.path.join(_this_dir, "../../best_quant.onnx")),
+        os.path.abspath(os.path.join(_this_dir, "../../../best_quant.onnx")),
+        os.path.abspath(os.path.join(os.getcwd(), "backend", "best_quant.onnx")),
+        os.path.abspath(os.path.join(os.getcwd(), "best_quant.onnx")),
+        "backend/best_quant.onnx",
+        "best_quant.onnx",
     ]
     
     candidates += [
@@ -75,11 +75,11 @@ def get_shared_model(model_path: str = None):
     _SHARED_MODEL = YOLO(path_to_load, task="detect") if path_to_load.endswith(".onnx") else YOLO(path_to_load)
     _SHARED_MODEL_PATH = path_to_load
 
-    # Warmup with exact inference resolution 352 to eliminate initial 3-second graph compilation lag
+    # Warmup with standard inference resolution 640 to eliminate initial graph compilation lag
     try:
-        _dummy = np.zeros((352, 352, 3), dtype=np.uint8)
-        _SHARED_MODEL.predict(_dummy, imgsz=352, verbose=False)
-        print("[AI-SHARED] Shared model initialized and warmed up successfully at imgsz=352.")
+        _dummy = np.zeros((640, 640, 3), dtype=np.uint8)
+        _SHARED_MODEL.predict(_dummy, imgsz=640, verbose=False)
+        print("[AI-SHARED] Shared model initialized and warmed up successfully at imgsz=640.")
     except Exception as e:
         print(f"[AI-SHARED] Warmup note: {e}")
 

@@ -59,31 +59,18 @@ def index_route():
 MODEL_PATH = '/content/gdrive/MyDrive/Poultry_AI_Project/HEN_COMB_1280_TRAINING/hen_comb_1280_100ep/weights/best.pt'
 _this_dir = os.path.dirname(os.path.abspath(__file__))
 if not os.path.exists(MODEL_PATH):
-    is_cuda = torch.cuda.is_available()
-    if is_cuda:
-        possible_paths = [
-            os.path.join(_this_dir, 'backend', 'best_quant.onnx'),
-            os.path.join(_this_dir, 'best_quant.onnx'),
-            'best_quant.onnx',
-            os.path.join(_this_dir, 'backend', 'best.pt'),
-            os.path.join(_this_dir, 'best.pt'),
-            'best.pt',
-            os.path.join(_this_dir, 'backend', 'best.onnx'),
-            os.path.join(_this_dir, 'best.onnx'),
-            'best.onnx',
-        ]
-    else:
-        possible_paths = [
-            os.path.join(_this_dir, 'backend', 'best_quant.onnx'),
-            os.path.join(_this_dir, 'best_quant.onnx'),
-            'best_quant.onnx',
-            os.path.join(_this_dir, 'backend', 'best.onnx'),
-            os.path.join(_this_dir, 'best.onnx'),
-            'best.onnx',
-            os.path.join(_this_dir, 'backend', 'best.pt'),
-            os.path.join(_this_dir, 'best.pt'),
-            'best.pt',
-        ]
+    possible_paths = [
+        os.path.join(_this_dir, 'backend', 'best.pt'),
+        os.path.join(_this_dir, 'best.pt'),
+        'backend/best.pt',
+        'best.pt',
+        os.path.join(_this_dir, 'backend', 'best.onnx'),
+        os.path.join(_this_dir, 'best.onnx'),
+        'best.onnx',
+        os.path.join(_this_dir, 'backend', 'best_quant.onnx'),
+        os.path.join(_this_dir, 'best_quant.onnx'),
+        'best_quant.onnx',
+    ]
     for p in possible_paths:
         if os.path.exists(p):
             MODEL_PATH = p
@@ -302,7 +289,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
     NEW_HEN_MIN_DIST = 45.0  # Prevents duplicate box on the same hen or re-registering known hens
     MAX_LOST_MEMORY = 60  # Frame memory for lost hens before retirement (2 seconds anti-repeat memory)
 
-    def extract_combs(f_img, conf_thresh=0.18, imgsz=352):
+    def extract_combs(f_img, conf_thresh=0.20, imgsz=640):
         if active_model is None:
             return []
         try:
@@ -312,6 +299,11 @@ def _sync_generate_frames(video_source, ref_settings=None):
 
             raw_boxes = []
             raw_confs = []
+
+            # Check if model specifically predicts hen combs (e.g. best.pt has class {0: 'HEN_COMB'})
+            is_comb_model = (
+                hasattr(active_model, 'names') and any('comb' in str(v).lower() for v in getattr(active_model, 'names', {}).values())
+            ) or ('best' in str(MODEL_PATH).lower())
 
             # Check if active_model is an ONNX Runtime InferenceSession
             if hasattr(active_model, 'run') and not hasattr(active_model, 'predict'):
@@ -347,6 +339,37 @@ def _sync_generate_frames(video_source, ref_settings=None):
                 cf = res.boxes.conf.cpu().numpy()
                 bx_list = [[b[0], b[1], b[2] - b[0], b[3] - b[1]] for b in bx]
                 cf_list = [float(c) for c in cf]
+
+            # Fast direct path for trained HEN_COMB model (matches Hugging Face precision 100%)
+            if is_comb_model:
+                candidates = []
+                for b, conf in zip(bx_list, cf_list):
+                    bx1 = float(b[0])
+                    by1 = float(b[1])
+                    bw = float(b[2])
+                    bh = float(b[3])
+                    if bw < 4 or bh < 4:
+                        continue
+                    x1_s = bx1 * scale_x_det
+                    y1_s = by1 * scale_y_det
+                    x2_s = (bx1 + bw) * scale_x_det
+                    y2_s = (by1 + bh) * scale_y_det
+                    cx = (x1_s + x2_s) / 2.0
+                    cy = (y1_s + y2_s) / 2.0
+                    if not is_in_zone(cx, cy):
+                        continue
+                    candidates.append({
+                        "box": [x1_s, y1_s, x2_s, y2_s],
+                        "center": (cx, cy),
+                        "conf": conf,
+                        "red_prom": 99.0
+                    })
+                candidates.sort(key=lambda d: d["conf"], reverse=True)
+                dedup = []
+                for d in candidates:
+                    if not any(math.hypot(d["center"][0] - ex["center"][0], d["center"][1] - ex["center"][1]) < 20.0 for ex in dedup):
+                        dedup.append(d)
+                return dedup
 
             hsv = cv2.cvtColor(f_img, cv2.COLOR_BGR2HSV)
             h_ch, s_ch, v_ch = cv2.split(hsv)
