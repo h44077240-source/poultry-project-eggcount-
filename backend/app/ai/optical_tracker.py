@@ -150,7 +150,7 @@ class OpticalHenTracker:
                         if hw > max_comb_w or hh > max_comb_h or (hw * hh) > max_area:
                             continue
 
-                        search_hh = hh * 0.50 if hh > 40 else hh
+                        search_hh = hh * 0.45 if hh > 35 else hh
                         crop_red = comb_red[y1:min(fh - 1, int(y1 + search_hh)), x1:x2]
                         has_red = np.count_nonzero(crop_red) >= 3
 
@@ -159,13 +159,13 @@ class OpticalHenTracker:
                             ys, xs = np.where(crop_red)
                             cx = x1 + float(np.median(xs))
                             cy = y1 + float(np.median(ys))
-                            w_comb = float(np.percentile(xs, 90) - np.percentile(xs, 10))
-                            h_comb = float(np.percentile(ys, 90) - np.percentile(ys, 10))
-                            base_sz = max(18.0 * scale_factor, min(36.0 * scale_factor, max(w_comb, h_comb) + 6.0))
+                            cw = float(np.percentile(xs, 95) - np.percentile(xs, 5))
+                            ch = float(np.percentile(ys, 95) - np.percentile(ys, 5))
+                            base_sz = max(16.0 * scale_factor, min(34.0 * scale_factor, max(cw, ch) + 4.0))
                         else:
                             cx = (x1 + x2) / 2.0
-                            cy = (y1 + y2) / 2.0
-                            base_sz = max(18.0 * scale_factor, min(36.0 * scale_factor, max(hw, hh) + 4.0))
+                            cy = y1 + min(hh * 0.30, 16.0 * scale_factor)
+                            base_sz = max(16.0 * scale_factor, min(30.0 * scale_factor, max(hw * 0.5, hh * 0.5)))
 
                         hw_box = base_sz / 2.0
                         hh_box = base_sz / 2.0
@@ -485,16 +485,17 @@ class OpticalHenTracker:
                     }
                     used_hens.add(hid)
 
-            # IMMEDIATE RETIREMENT: When a hen actually leaves the zone or is lost too long
-            # When a hen leaves the zone, its box vanishes immediately and ID is permanently preserved!
+            # IMMEDIATE RETIREMENT: When a hen actually leaves the screen/zone or is lost
+            # When a hen leaves the screen, its box vanishes immediately and ID is permanently preserved!
             z = getattr(self, '_zone', None)
             for hid in list(self.hens.keys()):
                 b = self.hens[hid]["box"]
                 cx, cy = self.hens[hid]["center"]
                 left_zone = (z is not None and not (z[0] <= cx <= z[2] and z[1] <= cy <= z[3]))
-                lost_too_long = self.hens[hid]["lost"] > 45
-                is_out_of_bounds = (b[2] < 0 or b[0] > fw or b[3] < 0 or b[1] > fh)
-                if left_zone or lost_too_long or is_out_of_bounds:
+                exited_screen = (cx < 10 or cx > fw - 10 or cy < 10 or cy > fh - 10 or
+                                 b[2] < 5 or b[0] > fw - 5 or b[3] < 5 or b[1] > fh - 5)
+                lost_too_long = self.hens[hid]["lost"] > 25
+                if left_zone or exited_screen or lost_too_long:
                     del self.hens[hid]
 
             # ─── 3. Submit frame to AI worker if idle ───
@@ -502,11 +503,12 @@ class OpticalHenTracker:
                 if self.ai_frame is None and self.ai_results is None:
                     self.ai_frame = frame.copy()
 
-            # ZONE FILTER: Only display boxes while the hen's head/comb is actively detected inside the detection zone
+            # ZONE FILTER: Only display boxes while the hen's comb is actively visible inside the screen
+            # When a hen leaves the screen, its box leaves the screen cleanly within 0.25s
             z = getattr(self, '_zone', None)
             candidates = [
                 hid for hid, d in self.hens.items()
-                if d["lost"] <= 18 and d.get("hits", 0) >= 1 and (z is None or (z[0] <= d["center"][0] <= z[2] and z[1] <= d["center"][1] <= z[3])) and d["box"][1] > 4
+                if d["lost"] <= 8 and d.get("hits", 0) >= 1 and (z is None or (z[0] <= d["center"][0] <= z[2] and z[1] <= d["center"][1] <= z[3])) and d["box"][1] > 4 and 10 <= d["center"][0] <= fw - 10 and 10 <= d["center"][1] <= fh - 10
             ]
             candidates.sort(key=lambda hid: (-self.hens[hid].get("hits", 0), self.hens[hid]["lost"]))
 

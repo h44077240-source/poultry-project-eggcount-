@@ -977,9 +977,9 @@ export default function HenCombTrackingPage() {
       ctx.lineTo(x + width, y + height - cornerLen)
       ctx.stroke()
 
-      // 3. Head Tag with permanent unique hen number (HEAD #1, HEAD #2, etc. ZERO REPEATS!)
+      // 3. Comb Tag with permanent unique hen number (COMB #1, COMB #2, etc. ZERO REPEATS!)
       const henNum = Number(item.hen_number) || Number(item.track_id) || seqIndex
-      const label = `HEAD #${henNum}`
+      const label = `COMB #${henNum}`
       ctx.font = 'bold 13px Outfit, Arial, sans-serif'
       const textWidth = ctx.measureText(label).width
       const tagH = 20
@@ -1026,7 +1026,7 @@ export default function HenCombTrackingPage() {
 
     ctx.font = 'bold 13px sans-serif'
     ctx.fillStyle = '#22c55e'
-    ctx.fillText(`HEN HEADS: ${liveCount || visibleCount}`, hudX + 12, hudY + 44)
+    ctx.fillText(`HEN COMBS: ${liveCount || visibleCount}`, hudX + 12, hudY + 44)
 
     ctx.font = 'bold 15px sans-serif'
     ctx.fillStyle = '#facc15'

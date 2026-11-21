@@ -357,17 +357,14 @@ def _sync_generate_frames(video_source, ref_settings=None):
 
             candidates = []
             for b, conf in zip(bx_list, cf_list):
-                bx1 = float(b[0])
-                by1 = float(b[1])
-                bw = float(b[2])
-                bh = float(b[3])
+                bx1, by1, bw, bh = float(b[0]), float(b[1]), float(b[2]), float(b[3])
                 if bw < 4 or bh < 4:
                     continue
 
                 orig_x1 = max(0, min(in_w - 1, int(bx1)))
                 orig_y1 = max(0, min(in_h - 1, int(by1)))
                 orig_x2 = max(0, min(in_w - 1, int(bx1 + bw)))
-                search_bh = bh * 0.50 if bh > 40 else bh
+                search_bh = bh * 0.45 if bh > 35 else bh
                 orig_y2 = max(0, min(in_h - 1, int(by1 + search_bh)))
 
                 crop = comb_mask[orig_y1:orig_y2, orig_x1:orig_x2]
@@ -376,17 +373,18 @@ def _sync_generate_frames(video_source, ref_settings=None):
                     ys, xs = np.where(crop)
                     cx = (orig_x1 + float(np.median(xs))) * scale_x_det
                     cy = (orig_y1 + float(np.median(ys))) * scale_y_det
-                    w_comb = (np.percentile(xs, 90) - np.percentile(xs, 10)) * scale_x_det
-                    h_comb = (np.percentile(ys, 90) - np.percentile(ys, 10)) * scale_y_det
-                    base_sz = max(18.0, min(36.0, max(w_comb, h_comb) + 6.0))
+                    cw = (np.percentile(xs, 95) - np.percentile(xs, 5)) * scale_x_det
+                    ch = (np.percentile(ys, 95) - np.percentile(ys, 5)) * scale_y_det
+                    base_sz = max(16.0, min(34.0, max(cw, ch) + 4.0))
                 else:
-                    cx = (orig_x1 + float(b[2]) / 2.0) * scale_x_det
-                    cy = (orig_y1 + float(b[3]) / 2.0) * scale_y_det
-                    bw_det = float(b[2]) * scale_x_det
-                    bh_det = float(b[3]) * scale_y_det
-                    base_sz = max(18.0, min(36.0, max(bw_det, bh_det) + 4.0))
+                    # Centered on top of detection (comb/head) with snug size
+                    cx = (orig_x1 + bw / 2.0) * scale_x_det
+                    cy = (orig_y1 + min(bh * 0.30, 16.0)) * scale_y_det
+                    bw_det = bw * scale_x_det
+                    bh_det = bh * scale_y_det
+                    base_sz = max(16.0, min(30.0, max(bw_det * 0.5, bh_det * 0.5)))
 
-                if cy <= 4 or not is_in_zone(cx, cy):
+                if cy <= 6 or cy >= OUT_H - 6 or cx <= 6 or cx >= OUT_W - 6:
                     continue
 
                 hw, hh = base_sz / 2.0, base_sz / 2.0
@@ -399,7 +397,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
             candidates.sort(key=lambda d: d["conf"], reverse=True)
             dedup = []
             for d in candidates:
-                if not any(math.hypot(d["center"][0] - ex["center"][0], d["center"][1] - ex["center"][1]) < 8.0 for ex in dedup):
+                if not any(math.hypot(d["center"][0] - ex["center"][0], d["center"][1] - ex["center"][1]) < 10.0 for ex in dedup):
                     dedup.append(d)
             return dedup
         except Exception:
@@ -583,8 +581,8 @@ def _sync_generate_frames(video_source, ref_settings=None):
                         homx, homy = h.get("home", (hx, hy))
                         dist = min(math.hypot(dcx - hx, dcy - hy), math.hypot(dcx - homx, dcy - homy))
                         iou = compute_iou(d["box"], h["box"])
-                        if dist <= 28.0 or iou > 0.15:
-                            cost = (1.0 - iou) * 0.4 + (dist / 28.0) * 0.6
+                        if dist <= 38.0 or iou > 0.12:
+                            cost = (1.0 - iou) * 0.4 + (dist / 38.0) * 0.6
                             cands.append((cost, d_idx, hid))
 
                 cands.sort(key=lambda x: x[0])
@@ -597,10 +595,10 @@ def _sync_generate_frames(video_source, ref_settings=None):
                     nb = d["box"]
                     ob = hens[hid]["box"]
                     hens[hid]["box"] = [
-                        0.40 * nb[0] + 0.60 * ob[0],
-                        0.40 * nb[1] + 0.60 * ob[1],
-                        0.40 * nb[2] + 0.60 * ob[2],
-                        0.40 * nb[3] + 0.60 * ob[3],
+                        0.45 * nb[0] + 0.55 * ob[0],
+                        0.45 * nb[1] + 0.55 * ob[1],
+                        0.45 * nb[2] + 0.55 * ob[2],
+                        0.45 * nb[3] + 0.55 * ob[3],
                     ]
                     hens[hid]["center"] = (
                         (hens[hid]["box"][0] + hens[hid]["box"][2]) / 2.0,
@@ -613,18 +611,20 @@ def _sync_generate_frames(video_source, ref_settings=None):
                     if hid not in used_hens:
                         hens[hid]["lost"] += 1
 
-                # Stage 2: Register New Hens entering the zone
+                # Stage 2: Register New Hens entering the zone (Unique IDs, zero repeats!)
                 for d_idx, d in enumerate(fresh):
                     if d_idx in matched_dets:
                         continue
                     dcx, dcy = d["center"]
                     if not is_in_zone(dcx, dcy):
                         continue
+                    if not (12 <= dcx <= OUT_W - 12 and 12 <= dcy <= OUT_H - 12):
+                        continue
 
                     is_near = any(
                         min(math.hypot(dcx - h["center"][0], dcy - h["center"][1]),
-                            math.hypot(dcx - h.get("home", h["center"])[0], dcy - h.get("home", h["center"])[1])) < 12.0
-                        for h in hens.values() if h["lost"] <= 45
+                            math.hypot(dcx - h.get("home", h["center"])[0], dcy - h.get("home", h["center"])[1])) < 22.0
+                        for h in hens.values() if h["lost"] <= 20
                     )
                     if not is_near:
                         hid = next_id
@@ -644,19 +644,21 @@ def _sync_generate_frames(video_source, ref_settings=None):
                     if ai_frame is None:
                         ai_frame = frame.copy()
 
-            # 4. Long-term memory: hens keep their slot without creating duplicates
+            # 4. Clean retirement: When a hen exits the screen, its box MUST leave the screen cleanly!
             for hid in list(hens.keys()):
                 b = hens[hid]["box"]
                 cx, cy = hens[hid]["center"]
-                out_of_screen = (b[2] < -20 or b[0] > OUT_W + 20 or b[3] < -20 or b[1] > OUT_H + 20)
-                lost_too_long = hens[hid]["lost"] > 60
-                if out_of_screen or lost_too_long:
+                exited_screen = (cx < 10 or cx > OUT_W - 10 or cy < 10 or cy > OUT_H - 10 or
+                                 b[2] < 5 or b[0] > OUT_W - 5 or b[3] < 5 or b[1] > OUT_H - 5)
+                lost_too_long = hens[hid]["lost"] > 25
+                if exited_screen or lost_too_long:
                     del hens[hid]
 
-            # 5. Visible hens: actively tracked on-screen (rock solid, no flicker, lost <= 20)
+            # 5. Visible hens: actively tracked on-screen
+            # When a hen exits the screen, its box leaves the screen cleanly within 0.25s
             render_hens = [
                 hid for hid, h in hens.items()
-                if h["lost"] <= 20 and is_in_zone(*h["center"])
+                if h["lost"] <= 8 and (10 <= h["center"][0] <= OUT_W - 10 and 10 <= h["center"][1] <= OUT_H - 10)
             ]
             
             # Sort for stable rendering order
@@ -692,7 +694,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
                 cx_dot = (x1 + x2) // 2
                 cy_dot = (y1 + y2) // 2
 
-                # 1. Glowing green box outline
+                # 1. Glowing green box outline strictly around the hen's comb
                 cv2.rectangle(display, (x1, y1), (x2, y2), (0, 255, 0), 2)
 
                 # 2. White corner brackets
@@ -705,8 +707,8 @@ def _sync_generate_frames(video_source, ref_settings=None):
                 cv2.circle(display, (cx_dot, cy_dot), 3, (0, 255, 0), -1)
                 cv2.circle(display, (cx_dot, cy_dot), 1, (255, 255, 255), -1)
 
-                # 4. Solid green badge HEAD #{hid} (PERMANENT UNIQUE ID, NEVER REPEATS!)
-                lbl_text = f"HEAD #{hid}"
+                # 4. Solid green badge COMB #{hid} (PERMANENT UNIQUE ID, NEVER REPEATS!)
+                lbl_text = f"COMB #{hid}"
                 (tw, th), _ = cv2.getTextSize(lbl_text, cv2.FONT_HERSHEY_SIMPLEX, 0.40, 1)
                 badge_y1 = max(0, y1 - th - 6)
                 badge_y2 = y1
@@ -721,7 +723,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
             cv2.rectangle(display, (8, 12), (210, 78), (0, 0, 0), -1)
             cv2.rectangle(display, (8, 12), (210, 78), (0, 255, 0), 1)
             cv2.putText(display, f"TIME: {time_s:.1f}s / {total_sec:.1f}s", (14, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (220, 220, 220), 1, cv2.LINE_AA)
-            cv2.putText(display, f"HEN HEADS: {current_live_count}", (14, 48), cv2.FONT_HERSHEY_SIMPLEX, 0.44, (0, 255, 0), 2, cv2.LINE_AA)
+            cv2.putText(display, f"LIVE COMBS: {current_live_count}", (14, 48), cv2.FONT_HERSHEY_SIMPLEX, 0.44, (0, 255, 0), 2, cv2.LINE_AA)
             cv2.putText(display, f"TOTAL COUNTED: {current_total_count}", (14, 68), cv2.FONT_HERSHEY_SIMPLEX, 0.46, (0, 215, 255), 2, cv2.LINE_AA)
 
             ret2, buffer = cv2.imencode('.jpg', display, encode_param)
