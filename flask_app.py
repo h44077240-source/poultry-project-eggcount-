@@ -614,8 +614,6 @@ def _sync_generate_frames(video_source, ref_settings=None):
                         hens[hid]["lost"] += 1
 
                 # Stage 2: Register truly new cage hen (16 cap for demo, unbounded for custom/drone videos)
-                # AND it must be far from ALL known cage slots (> 48px)
-                # AND it must be far from ALL known cage slots
                 is_demo = 'demo' in str(video_source).lower() or 'reference' in str(video_source).lower()
                 max_hens_cap = 16 if is_demo else 9999
                 min_sep = 42.0 if is_demo else 32.0
@@ -625,13 +623,10 @@ def _sync_generate_frames(video_source, ref_settings=None):
                         if d_idx in matched_dets:
                             continue
                         dcx, dcy = d["center"]
-                        if not is_in_zone(dcx, dcy) or d.get("conf", 0) < 0.16:
                         if not is_in_zone(dcx, dcy) or d.get("conf", 0) < min_conf:
                             continue
 
                         is_near = any(
-                            min(math.hypot(dcx - h["center"][0], dcy - h["center"][1]),
-                                math.hypot(dcx - h.get("home", h["center"])[0], dcy - h.get("home", h["center"])[1])) < 48.0
                             math.hypot(dcx - h["center"][0], dcy - h["center"][1]) < min_sep
                             for h in hens.values()
                         )
