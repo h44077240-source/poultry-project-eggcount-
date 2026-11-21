@@ -163,6 +163,14 @@ async def tracker_upload(file: UploadFile = File(...)):
         with open(temp_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer, length=1024*1024)
 
+        # Remove any stale cached _opt_ file so freshly uploaded video is always used directly
+        for old_opt in [UPLOAD_DIR / f"_opt_{safe_filename}", UPLOAD_DIR / f"_opt_{clean_name}"]:
+            if old_opt.exists():
+                try:
+                    old_opt.unlink()
+                except Exception:
+                    pass
+
         # Reset counts and tracker state for this new video so count starts fresh from beginning
         global global_live_tracker
         if global_live_tracker is not None:
@@ -226,10 +234,6 @@ def stream_video_file(filename: str):
             filepath = found
         else:
             raise HTTPException(status_code=404, detail=f"Video '{filename}' not found on server")
-
-    opt_file = UPLOAD_DIR / f"_opt_{clean_filename}"
-    if opt_file.exists():
-        filepath = str(opt_file)
 
     if not flask_app:
         raise HTTPException(status_code=500, detail="Video streaming module not available")

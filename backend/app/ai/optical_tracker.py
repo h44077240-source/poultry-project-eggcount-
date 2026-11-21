@@ -115,8 +115,8 @@ class OpticalHenTracker:
                 results = self.model.predict(
                     source=f,
                     verbose=False,
-                    conf=0.035,
-                    iou=0.40,
+                    conf=0.03,
+                    iou=0.35,
                     imgsz=infer_imgsz,
                     device=self.DEVICE
                 )
@@ -127,10 +127,7 @@ class OpticalHenTracker:
                     confs = results[0].boxes.conf.cpu().numpy()
 
                     # Dynamic Zone definition (stored for new-hen gating in process_live_frame)
-                    if fw < fh:
-                        self._zone = (int(fw * 0.01), int(fh * 0.02), int(fw * 0.99), int(fh * 0.98))
-                    else:
-                        self._zone = (int(fw * 0.01), int(fh * 0.02), int(fw * 0.99), int(fh * 0.98))
+                    self._zone = (int(fw * 0.005), int(fh * 0.01), int(fw * 0.995), int(fh * 0.99))
 
                     max_comb_w = max(60, int(fw * (0.35 if fw < fh else 0.18)))
                     max_comb_h = max(60, int(fh * (0.22 if fw < fh else 0.22)))
@@ -140,36 +137,35 @@ class OpticalHenTracker:
                     h_ch, s_ch, v_ch = cv2.split(hsv)
                     b_ch, g_ch, r_ch = cv2.split(f.astype(np.float32))
                     comb_red = (
-                        (((h_ch >= 150) | (h_ch <= 15)) & (s_ch > 32) & (v_ch > 40) & ((r_ch - g_ch) > 12)) |
-                        (((r_ch - np.maximum(g_ch, b_ch)) > 15) & (s_ch > 30) & (v_ch > 45))
+                        (((h_ch >= 150) | (h_ch <= 18)) & (s_ch > 24) & (v_ch > 30) & ((r_ch - g_ch) > 8)) |
+                        (((r_ch - np.maximum(g_ch, b_ch)) > 10) & (s_ch > 24) & (v_ch > 35))
                     )
 
                     for box, conf in zip(boxes, confs):
                         x1, y1, x2, y2 = map(int, box)
                         hw = x2 - x1
                         hh = y2 - y1
-                        if hw < 8 or hh < 8:
+                        if hw < 4 or hh < 4:
                             continue
                         if hw > max_comb_w or hh > max_comb_h or (hw * hh) > max_area:
                             continue
 
-                        search_hh = hh * 0.40 if hh > 45 else hh
+                        search_hh = hh * 0.50 if hh > 40 else hh
                         crop_red = comb_red[y1:min(fh - 1, int(y1 + search_hh)), x1:x2]
-                        if np.count_nonzero(crop_red) < 8:
-                            continue
+                        has_red = np.count_nonzero(crop_red) >= 3
 
-                        ys, xs = np.where(crop_red)
                         scale_factor = max(fw, fh) / 640.0
-                        if len(xs) >= 4:
+                        if has_red:
+                            ys, xs = np.where(crop_red)
                             cx = x1 + float(np.median(xs))
                             cy = y1 + float(np.median(ys))
                             w_comb = float(np.percentile(xs, 90) - np.percentile(xs, 10))
                             h_comb = float(np.percentile(ys, 90) - np.percentile(ys, 10))
-                            base_sz = max(24.0 * scale_factor, min(38.0 * scale_factor, max(w_comb, h_comb) + 6.0))
+                            base_sz = max(18.0 * scale_factor, min(36.0 * scale_factor, max(w_comb, h_comb) + 6.0))
                         else:
                             cx = (x1 + x2) / 2.0
                             cy = (y1 + y2) / 2.0
-                            base_sz = max(24.0 * scale_factor, min(38.0 * scale_factor, max(hw, hh) + 4.0))
+                            base_sz = max(18.0 * scale_factor, min(36.0 * scale_factor, max(hw, hh) + 4.0))
 
                         hw_box = base_sz / 2.0
                         hh_box = base_sz / 2.0
@@ -181,7 +177,7 @@ class OpticalHenTracker:
                         ]
 
                         # Reject ceiling fixtures at top
-                        if box_final[1] <= 6:
+                        if box_final[1] <= 4:
                             continue
 
                         # Zone check: only detect combs inside the detection zone
@@ -206,7 +202,7 @@ class OpticalHenTracker:
                     for ex in kept_dets:
                         c2 = ex["center"]
                         diag2 = ex["diag"]
-                        if math.hypot(c1[0] - c2[0], c1[1] - c2[1]) < min(diag1, diag2) * 0.40 or math.hypot(c1[0] - c2[0], c1[1] - c2[1]) < 22:
+                        if math.hypot(c1[0] - c2[0], c1[1] - c2[1]) < 8.0:
                             overlap = True
                             break
                     if not overlap:
@@ -458,7 +454,7 @@ class OpticalHenTracker:
                         hdata["lost"] += 1
 
                 # Stage 2: Register New Hen entering the zone (Unique IDs, zero repeats!)
-                min_new_dist = 36.0
+                min_new_dist = 12.0
                 unmatched_fresh = [det for det_idx, det in enumerate(fresh) if det_idx not in used_dets and det.get("conf", 0.0) >= 0.03]
                 unmatched_fresh.sort(key=lambda d: -d["center"][1])
                 for det in unmatched_fresh:
@@ -507,11 +503,10 @@ class OpticalHenTracker:
                     self.ai_frame = frame.copy()
 
             # ZONE FILTER: Only display boxes while the hen's head/comb is actively detected inside the detection zone
-            # When a hen leaves the zone, its detection box disappears immediately ("poiruranum")
             z = getattr(self, '_zone', None)
             candidates = [
                 hid for hid, d in self.hens.items()
-                if d["lost"] <= 2 and d.get("hits", 0) >= 1 and (z is None or (z[0] <= d["center"][0] <= z[2] and z[1] <= d["center"][1] <= z[3])) and d["box"][1] > 6
+                if d["lost"] <= 18 and d.get("hits", 0) >= 1 and (z is None or (z[0] <= d["center"][0] <= z[2] and z[1] <= d["center"][1] <= z[3])) and d["box"][1] > 4
             ]
             candidates.sort(key=lambda hid: (-self.hens[hid].get("hits", 0), self.hens[hid]["lost"]))
 
