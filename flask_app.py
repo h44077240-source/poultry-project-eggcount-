@@ -304,7 +304,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
     NEW_HEN_MIN_DIST = 22.0  # Allows adjacent hens in cage compartments without suppression
     MAX_LOST_MEMORY = 25  # Frame memory for lost hens before retirement
 
-    def extract_combs(f_img, conf_thresh=0.20, imgsz=640):
+    def extract_combs(f_img, conf_thresh=0.10, imgsz=640):
         if active_model is None:
             return []
         try:
@@ -358,8 +358,8 @@ def _sync_generate_frames(video_source, ref_settings=None):
 
             # Strictly isolate RED HEN COMB (rejects brown feathers, bodies, cage wires)
             comb_mask = (
-                (((h_ch >= 150) | (h_ch <= 15)) & (s_ch > 40) & (v_ch > 45) & ((r_ch - g_ch) > 20)) |
-                (((r_ch - np.maximum(g_ch, b_ch)) > 25) & (s_ch > 40) & (v_ch > 50))
+                (((h_ch >= 150) | (h_ch <= 18)) & (s_ch > 28) & (v_ch > 38) & ((r_ch - g_ch) > 14)) |
+                (((r_ch - np.maximum(g_ch, b_ch)) > 16) & (s_ch > 28) & (v_ch > 38))
             )
 
             candidates = []
@@ -374,12 +374,12 @@ def _sync_generate_frames(video_source, ref_settings=None):
                 orig_x1 = max(0, min(in_w - 1, int(bx1)))
                 orig_y1 = max(0, min(in_h - 1, int(by1)))
                 orig_x2 = max(0, min(in_w - 1, int(bx1 + bw)))
-                search_bh = bh * 0.40 if bh > 45 else bh
+                search_bh = bh * 0.45 if bh > 40 else bh
                 orig_y2 = max(0, min(in_h - 1, int(by1 + search_bh)))
 
                 crop = comb_mask[orig_y1:orig_y2, orig_x1:orig_x2]
                 # MUST contain a true red hen comb: reject body/feathers completely
-                if np.count_nonzero(crop) < 10:
+                if np.count_nonzero(crop) < 6:
                     continue
 
                 ys, xs = np.where(crop)
@@ -389,7 +389,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
                 if cy <= 6 or not is_in_zone(cx, cy):
                     continue
 
-                base_sz = 30.0  # Tight box directly framing the comb
+                base_sz = 28.0  # Tight box directly framing the comb
                 hw, hh = base_sz / 2.0, base_sz / 2.0
                 candidates.append({
                     "box": [cx - hw, cy - hh, cx + hw, cy + hh],
@@ -400,7 +400,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
             candidates.sort(key=lambda d: d["conf"], reverse=True)
             dedup = []
             for d in candidates:
-                if not any(math.hypot(d["center"][0] - ex["center"][0], d["center"][1] - ex["center"][1]) < 22.0 for ex in dedup):
+                if not any(math.hypot(d["center"][0] - ex["center"][0], d["center"][1] - ex["center"][1]) < 18.0 for ex in dedup):
                     dedup.append(d)
             return dedup
         except Exception:
@@ -624,10 +624,10 @@ def _sync_generate_frames(video_source, ref_settings=None):
 
                     is_near = any(
                         min(math.hypot(dcx - h["center"][0], dcy - h["center"][1]),
-                            math.hypot(dcx - h.get("home", h["center"])[0], dcy - h.get("home", h["center"])[1])) < 42.0
+                            math.hypot(dcx - h.get("home", h["center"])[0], dcy - h.get("home", h["center"])[1])) < 28.0
                         for h in hens.values() if h["lost"] <= 90
                     )
-                    if not is_near and d["conf"] >= 0.35:
+                    if not is_near and d["conf"] >= 0.12:
                         hid = next_id
                         next_id += 1
                         hens[hid] = {
