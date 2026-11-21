@@ -302,7 +302,9 @@ def _sync_generate_frames(video_source, ref_settings=None):
     NEW_HEN_MIN_DIST = 22.0  # Allows adjacent hens in cage compartments without suppression
     MAX_LOST_MEMORY = 25  # Frame memory for lost hens before retirement
 
-    def extract_combs(f_img, conf_thresh=0.10, imgsz=640):
+    def extract_combs(f_img, conf_thresh=0.08, imgsz=None):
+        if imgsz is None:
+            imgsz = 480 if os.environ.get("RENDER") == "true" else 640
         if active_model is None:
             return []
         try:
@@ -315,7 +317,9 @@ def _sync_generate_frames(video_source, ref_settings=None):
 
             # Check if active_model is an ONNX Runtime InferenceSession
             if hasattr(active_model, 'run') and not hasattr(active_model, 'predict'):
-                ai_in = cv2.resize(f_img, (imgsz, imgsz)).astype(np.float32) / 255.0
+                # Crucial Fix: Convert BGR to RGB so red hen combs match model training color space
+                rgb_img = cv2.cvtColor(f_img, cv2.COLOR_BGR2RGB)
+                ai_in = cv2.resize(rgb_img, (imgsz, imgsz)).astype(np.float32) / 255.0
                 ai_tensor = np.transpose(ai_in, (2, 0, 1))[np.newaxis, ...]
                 inp_name = active_model.get_inputs()[0].name
                 preds = active_model.run(None, {inp_name: ai_tensor})[0][0] # (5, N)
@@ -373,17 +377,30 @@ def _sync_generate_frames(video_source, ref_settings=None):
                 orig_y2 = max(0, min(in_h - 1, int(by1 + search_bh)))
 
                 crop = comb_mask[orig_y1:orig_y2, orig_x1:orig_x2]
-                if np.count_nonzero(crop) < 10:
-                    continue
+                has_red = np.count_nonzero(crop) >= 4
+                if has_red:
+                    ys, xs = np.where(crop)
+                    if len(xs) >= 4:
+                        cx = (orig_x1 + float(np.median(xs))) * scale_x_det
+                        cy = (orig_y1 + float(np.median(ys))) * scale_y_det
+                        w_comb = (np.percentile(xs, 90) - np.percentile(xs, 10)) * scale_x_det
+                        h_comb = (np.percentile(ys, 90) - np.percentile(ys, 10)) * scale_y_det
+                        base_sz = max(24.0, min(38.0, max(w_comb, h_comb) + 6.0))
+                    else:
+                        has_red = False
 
-                ys, xs = np.where(crop)
-                cx = (orig_x1 + float(np.median(xs))) * scale_x_det
-                cy = (orig_y1 + float(np.median(ys))) * scale_y_det
+                if not has_red:
+                    if conf < 0.15:
+                        continue
+                    cx = (orig_x1 + float(b[2]) / 2.0) * scale_x_det
+                    cy = (orig_y1 + float(b[3]) / 2.0) * scale_y_det
+                    bw_det = float(b[2]) * scale_x_det
+                    bh_det = float(b[3]) * scale_y_det
+                    base_sz = max(24.0, min(38.0, max(bw_det, bh_det) + 4.0))
 
                 if cy <= 6 or not is_in_zone(cx, cy):
                     continue
 
-                base_sz = 30.0
                 hw, hh = base_sz / 2.0, base_sz / 2.0
                 candidates.append({
                     "box": [cx - hw, cy - hh, cx + hw, cy + hh],
@@ -405,7 +422,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
     hens = {}
     next_id = 1
     try:
-        init_dets = extract_combs(sample_frame, conf_thresh=0.10, imgsz=640)
+        init_dets = extract_combs(sample_frame)
         init_in_zone = [d for d in init_dets if is_in_zone(d["center"][0], d["center"][1])]
         if OUT_W < OUT_H:
             init_in_zone.sort(key=lambda d: -d["center"][1])
@@ -453,7 +470,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
                 time.sleep(0.005)
                 continue
             try:
-                fresh_dets = extract_combs(img_to_run, conf_thresh=0.10, imgsz=640)
+                fresh_dets = extract_combs(img_to_run)
                 with ai_lock:
                     ai_results = fresh_dets
             except Exception:

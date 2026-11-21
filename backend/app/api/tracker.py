@@ -161,7 +161,7 @@ async def tracker_upload(file: UploadFile = File(...)):
         safe_filename = clean_name or "video.mp4"
         temp_path = UPLOAD_DIR / safe_filename
         with open(temp_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+            shutil.copyfileobj(file.file, buffer, length=1024*1024)
 
         # Reset counts and tracker state for this new video so count starts fresh from beginning
         global global_live_tracker

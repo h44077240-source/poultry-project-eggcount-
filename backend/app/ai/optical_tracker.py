@@ -111,7 +111,7 @@ class OpticalHenTracker:
 
             try:
                 fh, fw = f.shape[:2]
-                infer_imgsz = 352 if (os.environ.get("RENDER") == "true" or not torch.cuda.is_available()) else 640
+                infer_imgsz = 384 if (os.environ.get("RENDER") == "true" or not torch.cuda.is_available()) else 640
                 results = self.model.predict(
                     source=f,
                     verbose=False,
@@ -160,11 +160,16 @@ class OpticalHenTracker:
 
                         ys, xs = np.where(crop_red)
                         scale_factor = max(fw, fh) / 640.0
-                        cx = x1 + float(np.median(xs))
-                        cy = y1 + float(np.median(ys))
-                        w_comb = float(np.percentile(xs, 90) - np.percentile(xs, 10))
-                        h_comb = float(np.percentile(ys, 90) - np.percentile(ys, 10))
-                        base_sz = max(24.0 * scale_factor, min(36.0 * scale_factor, max(w_comb, h_comb) + 6.0))
+                        if len(xs) >= 4:
+                            cx = x1 + float(np.median(xs))
+                            cy = y1 + float(np.median(ys))
+                            w_comb = float(np.percentile(xs, 90) - np.percentile(xs, 10))
+                            h_comb = float(np.percentile(ys, 90) - np.percentile(ys, 10))
+                            base_sz = max(24.0 * scale_factor, min(38.0 * scale_factor, max(w_comb, h_comb) + 6.0))
+                        else:
+                            cx = (x1 + x2) / 2.0
+                            cy = (y1 + y2) / 2.0
+                            base_sz = max(24.0 * scale_factor, min(38.0 * scale_factor, max(hw, hh) + 4.0))
 
                         hw_box = base_sz / 2.0
                         hh_box = base_sz / 2.0
