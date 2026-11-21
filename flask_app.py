@@ -304,9 +304,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
     NEW_HEN_MIN_DIST = 22.0  # Allows adjacent hens in cage compartments without suppression
     MAX_LOST_MEMORY = 25  # Frame memory for lost hens before retirement
 
-    def extract_combs(f_img, conf_thresh=0.08, imgsz=None):
-        if imgsz is None:
-            imgsz = 480 if os.environ.get("RENDER") == "true" else 640
+    def extract_combs(f_img, conf_thresh=0.20, imgsz=640):
         if active_model is None:
             return []
         try:
@@ -358,9 +356,10 @@ def _sync_generate_frames(video_source, ref_settings=None):
             h_ch, s_ch, v_ch = cv2.split(hsv)
             b_ch, g_ch, r_ch = cv2.split(f_img.astype(np.float32))
 
+            # Strictly isolate RED HEN COMB (rejects brown feathers, bodies, cage wires)
             comb_mask = (
-                (((h_ch >= 150) | (h_ch <= 18)) & (s_ch > 28) & (v_ch > 35) & ((r_ch - g_ch) > 10)) |
-                (((r_ch - np.maximum(g_ch, b_ch)) > 12) & (s_ch > 28) & (v_ch > 40))
+                (((h_ch >= 150) | (h_ch <= 15)) & (s_ch > 40) & (v_ch > 45) & ((r_ch - g_ch) > 20)) |
+                (((r_ch - np.maximum(g_ch, b_ch)) > 25) & (s_ch > 40) & (v_ch > 50))
             )
 
             candidates = []
@@ -379,30 +378,18 @@ def _sync_generate_frames(video_source, ref_settings=None):
                 orig_y2 = max(0, min(in_h - 1, int(by1 + search_bh)))
 
                 crop = comb_mask[orig_y1:orig_y2, orig_x1:orig_x2]
-                has_red = np.count_nonzero(crop) >= 4
-                if has_red:
-                    ys, xs = np.where(crop)
-                    if len(xs) >= 4:
-                        cx = (orig_x1 + float(np.median(xs))) * scale_x_det
-                        cy = (orig_y1 + float(np.median(ys))) * scale_y_det
-                        w_comb = (np.percentile(xs, 90) - np.percentile(xs, 10)) * scale_x_det
-                        h_comb = (np.percentile(ys, 90) - np.percentile(ys, 10)) * scale_y_det
-                        base_sz = max(24.0, min(38.0, max(w_comb, h_comb) + 6.0))
-                    else:
-                        has_red = False
+                # MUST contain a true red hen comb: reject body/feathers completely
+                if np.count_nonzero(crop) < 10:
+                    continue
 
-                if not has_red:
-                    if conf < 0.15:
-                        continue
-                    cx = (orig_x1 + float(b[2]) / 2.0) * scale_x_det
-                    cy = (orig_y1 + float(b[3]) / 2.0) * scale_y_det
-                    bw_det = float(b[2]) * scale_x_det
-                    bh_det = float(b[3]) * scale_y_det
-                    base_sz = max(24.0, min(38.0, max(bw_det, bh_det) + 4.0))
+                ys, xs = np.where(crop)
+                cx = (orig_x1 + float(np.median(xs))) * scale_x_det
+                cy = (orig_y1 + float(np.median(ys))) * scale_y_det
 
                 if cy <= 6 or not is_in_zone(cx, cy):
                     continue
 
+                base_sz = 30.0  # Tight box directly framing the comb
                 hw, hh = base_sz / 2.0, base_sz / 2.0
                 candidates.append({
                     "box": [cx - hw, cy - hh, cx + hw, cy + hh],
@@ -413,7 +400,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
             candidates.sort(key=lambda d: d["conf"], reverse=True)
             dedup = []
             for d in candidates:
-                if not any(math.hypot(d["center"][0] - ex["center"][0], d["center"][1] - ex["center"][1]) < 20.0 for ex in dedup):
+                if not any(math.hypot(d["center"][0] - ex["center"][0], d["center"][1] - ex["center"][1]) < 22.0 for ex in dedup):
                     dedup.append(d)
             return dedup
         except Exception:
@@ -637,10 +624,10 @@ def _sync_generate_frames(video_source, ref_settings=None):
 
                     is_near = any(
                         min(math.hypot(dcx - h["center"][0], dcy - h["center"][1]),
-                            math.hypot(dcx - h.get("home", h["center"])[0], dcy - h.get("home", h["center"])[1])) < 38.0
+                            math.hypot(dcx - h.get("home", h["center"])[0], dcy - h.get("home", h["center"])[1])) < 42.0
                         for h in hens.values() if h["lost"] <= 90
                     )
-                    if not is_near:
+                    if not is_near and d["conf"] >= 0.35:
                         hid = next_id
                         next_id += 1
                         hens[hid] = {
@@ -648,7 +635,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
                             "center": d["center"],
                             "home": d["center"],
                             "lost": 0,
-                            "hits": 1
+                            "hits": 3
                         }
 
             # 3. Dispatch current crisp frame to AI worker (throttled to avoid CPU thrashing)
