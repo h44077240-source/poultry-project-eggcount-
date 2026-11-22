@@ -138,29 +138,59 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 def tracker_check_video(filename: str):
     import urllib.parse
     import re
-    clean_filename = urllib.parse.unquote(filename)
+    clean_filename = urllib.parse.unquote(filename).strip()
     sanitized_filename = re.sub(r'[^a-zA-Z0-9_.-]', '_', Path(clean_filename).name)
-    candidates = [
-        UPLOAD_DIR / clean_filename,
-        UPLOAD_DIR / sanitized_filename,
-        UPLOAD_DIR / f"_opt_{clean_filename}",
-        UPLOAD_DIR / f"_opt_{sanitized_filename}",
-        PROJECT_ROOT / "uploads" / clean_filename,
-        PROJECT_ROOT / "uploads" / sanitized_filename,
-        PROJECT_ROOT / clean_filename,
-        PROJECT_ROOT / sanitized_filename,
-        PROJECT_ROOT / "backend" / clean_filename,
-        PROJECT_ROOT / "backend" / sanitized_filename,
+    base_name = Path(clean_filename).stem.lower()
+
+    search_dirs = [
+        UPLOAD_DIR,
+        PROJECT_ROOT / "backend" / "sample_videos",
+        PROJECT_ROOT / "sample_videos",
+        PROJECT_ROOT / "uploads",
+        PROJECT_ROOT / "backend",
+        PROJECT_ROOT,
+        Path("backend/sample_videos").resolve(),
+        Path("sample_videos").resolve(),
+        Path("uploads").resolve(),
     ]
-    for p in candidates:
-        if p.exists() and p.is_file():
-            dest = UPLOAD_DIR / p.name
-            if not dest.exists():
-                try:
-                    shutil.copy2(str(p), str(dest))
-                except Exception:
-                    pass
-            return {"success": True, "exists": True, "filename": p.name}
+
+    # 1. Exact or sanitized filename match
+    for d in search_dirs:
+        for fname in [clean_filename, sanitized_filename, f"_opt_{clean_filename}", f"_opt_{sanitized_filename}"]:
+            p = (d / fname)
+            if p.exists() and p.is_file() and p.stat().st_size > 1000:
+                dest = UPLOAD_DIR / p.name
+                if not dest.exists() or dest.stat().st_size != p.stat().st_size:
+                    try:
+                        shutil.copy2(str(p), str(dest))
+                    except Exception:
+                        pass
+                return {"success": True, "exists": True, "filename": p.name}
+
+    # 2. Case-insensitive or fuzzy DJI match (e.g. DJI_... (1).MP4 or DJI_... with lowercase mp4 or 0026)
+    clean_stem = re.sub(r'[\s_]*\(\d+\)|[\s_]*copy.*', '', base_name, flags=re.I)
+
+    for d in search_dirs:
+        if not d.exists():
+            continue
+        try:
+            for item in d.iterdir():
+                if item.is_file() and item.suffix.lower() in ['.mp4', '.avi', '.mov', '.mkv'] and item.stat().st_size > 1000:
+                    item_stem = item.stem.lower()
+                    if (item_stem == base_name or 
+                        item_stem == clean_stem or 
+                        ('0026' in base_name and '0026' in item_stem) or
+                        ('dji' in base_name and '0026' in item_stem)):
+                        dest = UPLOAD_DIR / item.name
+                        if not dest.exists() or dest.stat().st_size != item.stat().st_size:
+                            try:
+                                shutil.copy2(str(item), str(dest))
+                            except Exception:
+                                pass
+                        return {"success": True, "exists": True, "filename": item.name}
+        except Exception:
+            pass
+
     return {"success": True, "exists": False, "filename": clean_filename}
 
 from typing import Optional
@@ -248,8 +278,14 @@ def stream_video_file(filename: str):
         filepath = str(UPLOAD_DIR / sanitized_filename)
 
     if not os.path.exists(filepath):
-        # Fallback check relative to cwd or root uploads
+        # Fallback check relative to cwd, sample_videos, or root uploads
         possible = [
+            os.path.abspath(os.path.join(os.path.dirname(__file__), "../../sample_videos", clean_filename)),
+            os.path.abspath(os.path.join(os.path.dirname(__file__), "../../sample_videos", sanitized_filename)),
+            os.path.abspath(os.path.join(os.path.dirname(__file__), "../../sample_videos", "DJI_20260911155924_0026_S.MP4")),
+            os.path.abspath(os.path.join("backend", "sample_videos", clean_filename)),
+            os.path.abspath(os.path.join("sample_videos", clean_filename)),
+            os.path.abspath(os.path.join("backend", "sample_videos", "DJI_20260911155924_0026_S.MP4")),
             os.path.abspath(os.path.join("uploads", clean_filename)),
             os.path.abspath(os.path.join("backend", "uploads", clean_filename)),
             os.path.abspath(os.path.join("uploads", sanitized_filename)),

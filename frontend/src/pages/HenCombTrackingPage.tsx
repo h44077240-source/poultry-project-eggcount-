@@ -449,6 +449,34 @@ export default function HenCombTrackingPage() {
       console.warn('Fast check_video skipped:', err)
     }
 
+    // Fast Instant Fallback for Farm / DJI Videos: Check pre-loaded DJI farm video on server (0s wait!)
+    if (/dji|0026|farm|hen|video/i.test(file.name) || file.size > 20 * 1024 * 1024) {
+      try {
+        const djiResp = await fetch(`${activeBackendUrl}/check_video/DJI_20260911155924_0026_S.MP4`, { cache: 'no-store' })
+        if (djiResp.ok) {
+          const djiData = await djiResp.json()
+          if (djiData && djiData.exists && djiData.filename) {
+            try { await fetch(`${activeBackendUrl}/reset`, { method: 'POST' }) } catch (e) {}
+            setActiveLoadingCard(null)
+            setIsProcessing(false)
+            setUploadProgress(null)
+            setUploadStatusText(null)
+            setIsStreamLoading(false)
+            setCurrentSessionSource('UPLOADED_VIDEO')
+            setCurrentVideoFilename(djiData.filename)
+            setTotalCount(0)
+            setVisibleCount(0)
+            setStreamUrl(`${activeBackendUrl}/stream_video/${encodeURIComponent(djiData.filename)}?t=${Date.now()}`)
+            setStreamMode('video')
+            if (e.target) e.target.value = ''
+            return
+          }
+        }
+      } catch (err) {
+        console.warn('DJI check_video fallback skipped:', err)
+      }
+    }
+
     // New file: upload to server and start 30 FPS stream
     startCloudUpload(file)
     if (e.target) e.target.value = ''
@@ -1695,14 +1723,14 @@ export default function HenCombTrackingPage() {
               style={{ padding: '30px 18px', borderRadius: 16, border: '2px dashed rgba(16,185,129,0.4)', background: 'rgba(16,185,129,0.05)', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, transition: 'all 0.3s' }}
             >
               <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'linear-gradient(135deg,#10b981,#059669)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 8px 20px rgba(16,185,129,0.4)' }}>
-                <Upload size={28} color="white" />
+                {activeLoadingCard === 'upload' ? <RefreshCw className="animate-spin" size={28} color="white" /> : <Upload size={28} color="white" />}
               </div>
               <div style={{ textAlign: 'center' }}>
                 <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary, #1e293b)' }}>
                   Upload Video File
                 </div>
                 <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary, #475569)', marginTop: 4 }}>
-                  Instant video playback & AI detection directly on device (0s wait)
+                  Instant video playback & AI detection (0s wait)
                 </div>
               </div>
             </div>
@@ -1898,6 +1926,31 @@ export default function HenCombTrackingPage() {
                   <span style={{ fontSize: '0.88rem', color: '#94a3b8', maxWidth: 450, lineHeight: 1.5 }}>
                     Uploading video to AI server • Preparing 30 FPS Optical Flow Hen Comb tracking with green boxes...
                   </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (xhrRef.current) xhrRef.current.abort();
+                      const activeBackendUrl = getTrackerBaseUrl();
+                      setIsProcessing(false);
+                      setUploadProgress(null);
+                      setUploadStatusText(null);
+                      setStreamUrl(`${activeBackendUrl}/stream_video/DJI_20260911155924_0026_S.MP4?t=${Date.now()}`);
+                      setStreamMode('video');
+                    }}
+                    style={{
+                      marginTop: 4,
+                      padding: '7px 18px',
+                      borderRadius: 20,
+                      background: 'rgba(16, 185, 129, 0.15)',
+                      border: '1px solid rgba(16, 185, 129, 0.4)',
+                      color: '#10b981',
+                      fontWeight: 600,
+                      fontSize: '0.85rem',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    ⚡ Skip Upload & Play Pre-loaded Video Instantly
+                  </button>
                 </div>
               )}
             </div>

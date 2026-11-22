@@ -179,6 +179,9 @@ def _sync_generate_frames(video_source, ref_settings=None):
         cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         if not cap.isOpened() or os.environ.get("RENDER") == "true":
             fallback_demos = [
+                os.path.abspath(os.path.join(os.path.dirname(__file__), "backend", "sample_videos", "DJI_20260911155924_0026_S.MP4")),
+                os.path.abspath(os.path.join(os.getcwd(), "backend", "sample_videos", "DJI_20260911155924_0026_S.MP4")),
+                os.path.abspath(os.path.join(os.path.dirname(__file__), "sample_videos", "DJI_20260911155924_0026_S.MP4")),
                 os.path.abspath(os.path.join(os.path.dirname(__file__), "backend", "demo_hen_video.mp4")),
                 os.path.abspath(os.path.join(os.path.dirname(__file__), "demo_hen_video.mp4")),
                 os.path.abspath(os.path.join(os.getcwd(), "backend", "demo_hen_video.mp4")),
@@ -194,6 +197,9 @@ def _sync_generate_frames(video_source, ref_settings=None):
         actual_source = str(video_source)
         if not os.path.exists(actual_source):
             fallback_demos = [
+                os.path.abspath(os.path.join(os.path.dirname(__file__), "backend", "sample_videos", "DJI_20260911155924_0026_S.MP4")),
+                os.path.abspath(os.path.join(os.getcwd(), "backend", "sample_videos", "DJI_20260911155924_0026_S.MP4")),
+                os.path.abspath(os.path.join(os.path.dirname(__file__), "sample_videos", "DJI_20260911155924_0026_S.MP4")),
                 os.path.abspath(os.path.join(os.path.dirname(__file__), "backend", "demo_hen_video.mp4")),
                 os.path.abspath(os.path.join(os.path.dirname(__file__), "demo_hen_video.mp4")),
                 os.path.abspath(os.path.join(os.getcwd(), "backend", "demo_hen_video.mp4")),
