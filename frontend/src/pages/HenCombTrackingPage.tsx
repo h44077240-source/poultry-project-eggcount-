@@ -409,7 +409,7 @@ export default function HenCombTrackingPage() {
     setUploadStatusText(null)
   }
 
-  const handleVideoUpload = (e: React.ChangeEvent<HTMLInputElement>, cardType: 'record' | 'upload' = 'upload') => {
+  const handleVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>, cardType: 'record' | 'upload' = 'upload') => {
     const file = e.target.files?.[0]
     if (!file) return
 
@@ -419,7 +419,37 @@ export default function HenCombTrackingPage() {
     setPendingVideoFile(file)
     setShowUploadChoiceModal(false)
 
-    // Palaiya maari: Full 30 FPS OpenCV + YOLO tracking with real-time green boxes!
+    // Fast Instant Check: If video file exists on server, skip upload completely and stream immediately (0s wait!)
+    const activeBackendUrl = getTrackerBaseUrl()
+    try {
+      const checkResp = await fetch(`${activeBackendUrl}/check_video/${encodeURIComponent(file.name)}`, { cache: 'no-store' })
+      if (checkResp.ok) {
+        const checkData = await checkResp.json()
+        if (checkData && checkData.exists && checkData.filename) {
+          try {
+            await fetch(`${activeBackendUrl}/reset`, { method: 'POST' })
+          } catch (e) {}
+
+          setActiveLoadingCard(null)
+          setIsProcessing(false)
+          setUploadProgress(null)
+          setUploadStatusText(null)
+          setIsStreamLoading(false)
+          setCurrentSessionSource('UPLOADED_VIDEO')
+          setCurrentVideoFilename(checkData.filename)
+          setTotalCount(0)
+          setVisibleCount(0)
+          setStreamUrl(`${activeBackendUrl}/stream_video/${encodeURIComponent(checkData.filename)}?t=${Date.now()}`)
+          setStreamMode('video')
+          if (e.target) e.target.value = ''
+          return
+        }
+      }
+    } catch (err) {
+      console.warn('Fast check_video skipped:', err)
+    }
+
+    // New file: upload to server and start 30 FPS stream
     startCloudUpload(file)
     if (e.target) e.target.value = ''
   }
@@ -1610,26 +1640,7 @@ export default function HenCombTrackingPage() {
         </div>
       )}
 
-      {/* Real-time Upload Progress Banner */}
-      {uploadProgress !== null && (
-        <div style={{ width: '100%', maxWidth: 750, margin: '0 auto 24px auto', padding: '16px 20px', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.4)', borderRadius: 14 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', gap: 8 }}>
-            <span style={{ fontWeight: 700, color: '#10b981', fontSize: '0.95rem' }}>
-              {uploadStatusText || `Uploading Video: ${uploadProgress}%`}
-            </span>
-            <button
-              type="button"
-              onClick={cancelUpload}
-              style={{ background: 'rgba(239,68,68,0.2)', border: '1px solid rgba(239,68,68,0.5)', color: '#ef4444', padding: '4px 12px', borderRadius: 8, fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer' }}
-            >
-              Cancel & Play Instantly
-            </button>
-          </div>
-          <div style={{ width: '100%', height: 8, background: 'rgba(255,255,255,0.1)', borderRadius: 4, overflow: 'hidden' }}>
-            <div style={{ width: `${uploadProgress}%`, height: '100%', background: 'linear-gradient(90deg, #10b981, #06b6d4)', transition: 'width 0.2s ease-out' }} />
-          </div>
-        </div>
-      )}
+
 
       {/* ─── 1. Main 4-Option Stream Selection View ─── */}
       {!streamMode ? (

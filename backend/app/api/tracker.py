@@ -147,10 +147,20 @@ def tracker_check_video(filename: str):
         UPLOAD_DIR / f"_opt_{sanitized_filename}",
         PROJECT_ROOT / "uploads" / clean_filename,
         PROJECT_ROOT / "uploads" / sanitized_filename,
+        PROJECT_ROOT / clean_filename,
+        PROJECT_ROOT / sanitized_filename,
+        PROJECT_ROOT / "backend" / clean_filename,
+        PROJECT_ROOT / "backend" / sanitized_filename,
     ]
     for p in candidates:
         if p.exists() and p.is_file():
-            return {"success": True, "exists": True, "filename": clean_filename}
+            dest = UPLOAD_DIR / p.name
+            if not dest.exists():
+                try:
+                    shutil.copy2(str(p), str(dest))
+                except Exception:
+                    pass
+            return {"success": True, "exists": True, "filename": p.name}
     return {"success": True, "exists": False, "filename": clean_filename}
 
 from typing import Optional
