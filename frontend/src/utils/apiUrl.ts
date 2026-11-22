@@ -36,8 +36,8 @@ export function getApiBaseUrl(): string {
       // Standard default blueprint service name
       return 'https://giotag-backend.onrender.com'
     }
-    if (host.includes('.vercel.app') || host.includes('.netlify.app')) {
-      return 'https://giotag-backend.onrender.com'
+    if (host.includes('.vercel.app') || host.includes('.netlify.app') || host.includes('.up.railway.app')) {
+      return 'https://poultry-project-eggcount-production.up.railway.app'
     }
   }
 

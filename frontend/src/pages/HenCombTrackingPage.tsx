@@ -1437,7 +1437,7 @@ export default function HenCombTrackingPage() {
                 type="text"
                 value={customBackendInput}
                 onChange={e => setCustomBackendInput(e.target.value)}
-                placeholder="e.g. https://egg-with-hen.onrender.com"
+                placeholder="e.g. https://poultry-project-eggcount-production.up.railway.app"
                 style={{
                   width: '100%',
                   padding: '10px 14px',
