@@ -106,3 +106,5 @@ test_*.py
 hf_deploy/
 
 **/Ultralytics/
+
+.github_ci_backup/
