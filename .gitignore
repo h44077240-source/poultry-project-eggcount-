@@ -1,5 +1,6 @@
 # Python
 flask_app_recovered.py
+original_thermal.py
 __pycache__/
 *.py[cod]
 *.pyo
