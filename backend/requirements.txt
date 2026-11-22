@@ -16,11 +16,11 @@ psycopg2-binary==2.9.9
 asyncpg==0.29.0
 
 # Image / AI
-opencv-python-headless==4.9.0.80
-Pillow>=11.1.0
-numpy==1.26.4
-ultralytics
-onnxruntime>=1.19.0
+opencv-python-headless>=4.9.0.80
+Pillow>=10.0.0
+numpy>=1.24.0,<2.0.0
+ultralytics==8.3.0
+onnxruntime>=1.18.0
 
 # OpenAI Vision
 openai>=1.30.0
