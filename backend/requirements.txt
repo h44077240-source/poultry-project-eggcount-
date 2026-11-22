@@ -46,4 +46,5 @@ piexif
 pillow-heif==1.1.1
 Flask==3.0.3
 Flask-Cors==4.0.0
+gradio>=4.0.0
 gradio_client
