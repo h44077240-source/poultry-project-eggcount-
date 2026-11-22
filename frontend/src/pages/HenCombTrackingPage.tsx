@@ -414,12 +414,12 @@ export default function HenCombTrackingPage() {
 
     stopLiveCamera()
     setErrorMsg(null)
-    setActiveLoadingCard(cardType)
-    setPendingVideoFile(file)
+    setActiveLoadingCard(null)
+    setPendingVideoFile(null)
     setShowUploadChoiceModal(false)
 
-    // Direct Cloud AI Streaming with on-screen bounding boxes (identical to Farm Hen Video!)
-    startCloudUpload(file)
+    // Instant Playback on Device & Real-Time AI Detection (0s wait, no loading screen!)
+    startInstantLocalPlayback(file)
     if (e.target) e.target.value = ''
   }
 
@@ -618,45 +618,12 @@ export default function HenCombTrackingPage() {
         const blob = new Blob(recordedChunksRef.current, { type: mimeType })
         if (blob.size === 0) return
         stopLiveCamera()
-        setIsProcessing(true)
+        setIsProcessing(false)
         setErrorMsg(null)
         const ext = mimeType.includes('mp4') ? 'mp4' : 'webm'
         const file = new File([blob], `live_camera_recorded_${Date.now()}.${ext}`, { type: mimeType })
-        setCurrentSessionSource('LIVE_CAMERA')
-        setCurrentVideoFilename(file.name)
-        const formData = new FormData()
-        formData.append('file', file)
-        const activeBackendUrl = getTrackerBaseUrl()
-        try {
-          const uploadResp = await fetch(`${activeBackendUrl}/upload`, { 
-            method: 'POST', 
-            body: formData,
-            cache: 'no-store'
-          })
-          let uploadData: any = null
-          try {
-            const text = await uploadResp.text()
-            uploadData = text ? JSON.parse(text) : null
-          } catch (e) {
-            throw new Error(uploadResp.ok ? 'Invalid response from server' : `Server error (${uploadResp.status}: ${uploadResp.statusText || 'Upload failed'})`)
-          }
-          if (uploadData && uploadData.success) {
-            setStreamUrl(`${activeBackendUrl}/stream_video/${encodeURIComponent(uploadData.filename)}?t=${Date.now()}`)
-            setStreamMode('video')
-            setBackendPingStatus('online')
-          } else {
-            setErrorMsg('Processing failed: ' + (uploadData?.error || `Server status ${uploadResp.status}`))
-          }
-        } catch (err: any) {
-          if (err.name === 'TypeError' || err.message?.includes('Failed to fetch')) {
-            setErrorMsg('Connection failed ("Failed to fetch"). If hosted on Render Free Tier, the backend service is waking up (~45s). Please retry shortly.')
-            setBackendPingStatus('sleeping')
-          } else {
-            setErrorMsg('Error: ' + err.message)
-          }
-        } finally {
-          setIsProcessing(false)
-        }
+        // Instant playback & AI detection on device without any upload delay
+        startInstantLocalPlayback(file)
       }
       recorder.start(500)
       mediaRecorderRef.current = recorder
@@ -757,10 +724,11 @@ export default function HenCombTrackingPage() {
         return
       }
 
+      const curTime = (video && !isNaN(video.currentTime)) ? video.currentTime : ((Date.now() - startTimeRef.current) / 1000)
       const form = new FormData()
       form.append('frame', blob, 'frame.jpg')
       form.append('frame_number', String(frameNum))
-      form.append('video_time', String((Date.now() - startTimeRef.current) / 1000))
+      form.append('video_time', String(curTime))
 
       const activeBackendUrl = getTrackerBaseUrl()
       const response = await fetch(`${activeBackendUrl}/live_frame`, {
@@ -837,7 +805,7 @@ export default function HenCombTrackingPage() {
     ctx.clearRect(0, 0, cw, ch)
 
     const rawDets = latestResultsRef.current || []
-    if (performance.now() - latestResultTimeRef.current > 1200) {
+    if (performance.now() - latestResultTimeRef.current > 2500) {
       latestResultsRef.current = []
       animBoxesRef.current.clear()
     }
@@ -854,6 +822,22 @@ export default function HenCombTrackingPage() {
     const renderedH = vh * scale
     const offsetX = (cw - renderedW) / 2
     const offsetY = (ch - renderedH) / 2
+
+    // 0. DETECTION ZONE yellow/cyan border & label (matching cloud video stream)
+    const zoneX1 = offsetX + 0.005 * renderedW
+    const zoneY1 = offsetY + 0.01 * renderedH
+    const zoneX2 = offsetX + 0.995 * renderedW
+    const zoneY2 = offsetY + 0.99 * renderedH
+    const zoneW = zoneX2 - zoneX1
+    const zoneH = zoneY2 - zoneY1
+
+    ctx.strokeStyle = '#00f0ff'
+    ctx.lineWidth = 1.6
+    ctx.strokeRect(zoneX1, zoneY1, zoneW, zoneH)
+
+    ctx.font = 'bold 11px Outfit, Arial, sans-serif'
+    ctx.fillStyle = '#00f0ff'
+    ctx.fillText('DETECTION ZONE', zoneX1 + 6, zoneY1 + 14)
 
     let liveCount = 0
 
@@ -908,12 +892,20 @@ export default function HenCombTrackingPage() {
       const targetW = (nb[2] - nb[0]) * renderedW
       const targetH = (nb[3] - nb[1]) * renderedH
 
-      // Instant comb follow: exactly tracks rapid comb motion with zero lag
+      // Instant comb follow with smooth LERP to avoid jitter
       const henId = Number(item.hen_number) || 0
+      const prevBox = animBoxesRef.current.get(henId)
       let x = targetX
       let y = targetY
       let width = targetW
       let height = targetH
+      if (prevBox) {
+        const LERP = 0.50
+        x = prevBox[0] + (targetX - prevBox[0]) * LERP
+        y = prevBox[1] + (targetY - prevBox[1]) * LERP
+        width = prevBox[2] + (targetW - prevBox[2]) * LERP
+        height = prevBox[3] + (targetH - prevBox[3]) * LERP
+      }
       animBoxesRef.current.set(henId, [x, y, width, height])
 
       if (width <= 4 || height <= 4) continue
@@ -1022,9 +1014,12 @@ export default function HenCombTrackingPage() {
     ctx.lineWidth = 1.2
     ctx.stroke()
 
+    const curSec = (video && !isNaN(video.currentTime)) ? video.currentTime : ((Date.now() - startTimeRef.current) / 1000)
+    const durStr = (video && video.duration && !isNaN(video.duration)) ? ` / ${video.duration.toFixed(1)}s` : ''
+
     ctx.font = 'bold 12px monospace'
     ctx.fillStyle = '#94a3b8'
-    ctx.fillText(`TIME: ${((Date.now() - startTimeRef.current) / 1000).toFixed(1)}s`, hudX + 12, hudY + 22)
+    ctx.fillText(`TIME: ${curSec.toFixed(1)}s${durStr}`, hudX + 12, hudY + 22)
 
     ctx.font = 'bold 13px sans-serif'
     ctx.fillStyle = '#22c55e'
@@ -1672,10 +1667,10 @@ export default function HenCombTrackingPage() {
               </div>
               <div style={{ textAlign: 'center' }}>
                 <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary, #1e293b)' }}>
-                  {activeLoadingCard === 'record' ? 'Processing Video...' : 'Record Farm Video'}
+                  Record Farm Video
                 </div>
                 <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary, #475569)', marginTop: 4 }}>
-                  {activeLoadingCard === 'record' ? (uploadStatusText || 'Processing video on device...') : 'Record video with phone camera & convert to live AI stream'}
+                  Record video with phone camera & instant AI tracking (0s wait)
                 </div>
               </div>
             </div>
@@ -1686,17 +1681,17 @@ export default function HenCombTrackingPage() {
               id="card-upload-video"
               className="ref-mode-btn"
               onClick={() => { if (!activeLoadingCard && !isProcessing) fileInputRef.current?.click() }}
-              style={{ padding: '30px 18px', borderRadius: 16, border: '2px dashed rgba(16,185,129,0.4)', background: 'rgba(16,185,129,0.05)', cursor: activeLoadingCard === 'upload' ? 'wait' : 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, transition: 'all 0.3s' }}
+              style={{ padding: '30px 18px', borderRadius: 16, border: '2px dashed rgba(16,185,129,0.4)', background: 'rgba(16,185,129,0.05)', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, transition: 'all 0.3s' }}
             >
               <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'linear-gradient(135deg,#10b981,#059669)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 8px 20px rgba(16,185,129,0.4)' }}>
-                {activeLoadingCard === 'upload' ? <RefreshCw className="animate-spin" size={28} color="white" /> : <Upload size={28} color="white" />}
+                <Upload size={28} color="white" />
               </div>
               <div style={{ textAlign: 'center' }}>
                 <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary, #1e293b)' }}>
-                  {activeLoadingCard === 'upload' ? 'Processing Video...' : 'Upload Video File'}
+                  Upload Video File
                 </div>
                 <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary, #475569)', marginTop: 4 }}>
-                  {activeLoadingCard === 'upload' ? (uploadStatusText || 'Processing video on device...') : 'Upload custom farm video from device'}
+                  Instant video playback & AI detection directly on device (0s wait)
                 </div>
               </div>
             </div>
@@ -1758,7 +1753,18 @@ export default function HenCombTrackingPage() {
                 <button
                   type="button"
                   onClick={() => {
-                    if (streamUrl) {
+                    if (streamMode === 'local_video' && videoRef.current) {
+                      try {
+                        fetch(`${getTrackerBaseUrl()}/reset`, { method: 'POST' }).catch(() => {})
+                      } catch (e) {}
+                      setTotalCount(0)
+                      setVisibleCount(0)
+                      frameNumberRef.current = 0
+                      latestResultsRef.current = []
+                      animBoxesRef.current.clear()
+                      videoRef.current.currentTime = 0
+                      videoRef.current.play().catch(() => {})
+                    } else if (streamUrl) {
                       setIsStreamLoading(true)
                       const base = streamUrl.split('?')[0]
                       setStreamUrl(`${base}?t=${Date.now()}`)
@@ -1815,7 +1821,7 @@ export default function HenCombTrackingPage() {
                     controls
                     autoPlay
                     onPlay={handleVideoPlay}
-                    style={{ maxWidth: '100%', maxHeight: '75vh', objectFit: fitMode }}
+                    style={{ width: '100%', height: '100%', maxHeight: '75vh', objectFit: fitMode }}
                   />
                   <canvas
                     ref={overlayRef}

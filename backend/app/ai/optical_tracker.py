@@ -276,27 +276,32 @@ class OpticalHenTracker:
                             x2, y2 = max(0, min(fw - 1, x2)), max(0, min(fh - 1, y2))
                             crop_red = comb_red[y1:y2, x1:x2]
                             comb_px = np.count_nonzero(crop_red)
-                            if comb_px < 14:
-                                continue
-                            ys, xs = np.where(crop_red)
-                            if len(xs) >= 10:
+                            if comb_px >= 3:
+                                ys, xs = np.where(crop_red)
                                 cx = x1 + float(np.median(xs))
                                 cy = y1 + float(np.median(ys))
                                 w_comb = float(np.percentile(xs, 90) - np.percentile(xs, 10))
                                 h_comb = float(np.percentile(ys, 90) - np.percentile(ys, 10))
-                                base_sz = max(26.0 * scale_factor, min(38.0 * scale_factor, max(w_comb, h_comb) + 6.0))
-                                hw, hh = base_sz / 2.0, base_sz / 2.0
-                                box_final = [
-                                    max(0.0, float(cx - hw)),
-                                    max(0.0, float(cy - hh)),
-                                    min(float(fw - 1), float(cx + hw)),
-                                    min(float(fh - 1), float(cy + hh))
-                                ]
-                                init_candidates.append({
-                                    "box": box_final,
-                                    "center": (cx, cy),
-                                    "conf": float(conf)
-                                })
+                                base_sz = max(18.0 * scale_factor, min(38.0 * scale_factor, max(w_comb, h_comb) + 6.0))
+                            else:
+                                cx = (x1 + x2) / 2.0
+                                cy = y1 + min((y2 - y1) * 0.30, 16.0 * scale_factor)
+                                bw_c = (x2 - x1)
+                                bh_c = (y2 - y1)
+                                base_sz = max(18.0 * scale_factor, min(32.0 * scale_factor, max(bw_c * 0.5, bh_c * 0.5)))
+
+                            hw, hh = base_sz / 2.0, base_sz / 2.0
+                            box_final = [
+                                max(0.0, float(cx - hw)),
+                                max(0.0, float(cy - hh)),
+                                min(float(fw - 1), float(cx + hw)),
+                                min(float(fh - 1), float(cy + hh))
+                            ]
+                            init_candidates.append({
+                                "box": box_final,
+                                "center": (cx, cy),
+                                "conf": float(conf)
+                            })
 
                         # Sort bottom-to-top ("killa irunthu mela") so Hen #1 is at the bottom
                         init_candidates.sort(key=lambda d: -d["center"][1] * 2.0 + d["center"][0])
