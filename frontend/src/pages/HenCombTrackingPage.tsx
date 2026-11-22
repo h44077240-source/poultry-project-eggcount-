@@ -322,7 +322,6 @@ export default function HenCombTrackingPage() {
     const activeBackendUrl = getTrackerBaseUrl()
     const formData = new FormData()
     formData.append('file', file)
-    formData.append('video', file)
 
     const xhr = new XMLHttpRequest()
     xhrRef.current = xhr

@@ -102,6 +102,7 @@ processed/
 scratch/
 **/ledger_data.json
 test_mnn.py
-
+test_*.py
+hf_deploy/
 
 **/Ultralytics/
