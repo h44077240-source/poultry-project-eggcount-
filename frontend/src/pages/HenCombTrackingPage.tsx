@@ -369,7 +369,11 @@ export default function HenCombTrackingPage() {
         } catch (_) {
           serverError = xhr.responseText || ''
         }
-        setErrorMsg(serverError ? `Upload notice (${xhr.status}): ${serverError}` : `Server returned status code ${xhr.status}.`)
+        if (xhr.status === 404) {
+          setErrorMsg('Backend endpoint not found (404). Click the 📶 connection button above and select "☁️ Railway Cloud" or "🏠 Localhost Default".')
+        } else {
+          setErrorMsg(serverError ? `Upload notice (${xhr.status}): ${serverError}` : `Server returned status code ${xhr.status}.`)
+        }
       }
     }
 
@@ -1501,7 +1505,52 @@ export default function HenCombTrackingPage() {
                   fontSize: '0.9rem'
                 }}
               />
-              <span style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: 4, display: 'block' }}>
+              <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCustomBackendInput('')
+                    setCustomBackendUrl(null)
+                    setBackendUrl(getTrackerBaseUrl())
+                    checkBackendHealth('')
+                  }}
+                  style={{
+                    padding: '4px 12px',
+                    borderRadius: 6,
+                    fontSize: '0.78rem',
+                    fontWeight: 600,
+                    background: 'rgba(255,255,255,0.08)',
+                    border: '1px solid rgba(255,255,255,0.2)',
+                    color: '#94a3b8',
+                    cursor: 'pointer'
+                  }}
+                >
+                  🏠 Localhost Default
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const railwayUrl = 'https://poultry-project-eggcount-production.up.railway.app'
+                    setCustomBackendInput(railwayUrl)
+                    setCustomBackendUrl(railwayUrl)
+                    setBackendUrl(getTrackerBaseUrl())
+                    checkBackendHealth(railwayUrl)
+                  }}
+                  style={{
+                    padding: '4px 12px',
+                    borderRadius: 6,
+                    fontSize: '0.78rem',
+                    fontWeight: 600,
+                    background: 'rgba(16,185,129,0.15)',
+                    border: '1px solid rgba(16,185,129,0.4)',
+                    color: '#10b981',
+                    cursor: 'pointer'
+                  }}
+                >
+                  ☁️ Railway Cloud
+                </button>
+              </div>
+              <span style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: 6, display: 'block' }}>
                 Current Active: {getApiBaseUrl() || 'Localhost (proxied through port 5173)'}
               </span>
             </div>
