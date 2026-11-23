@@ -26,6 +26,10 @@ export function getApiBaseUrl(): string {
   // 3. Smart Cloud Auto-Resolution for Render (e.g. my-app-frontend.onrender.com -> my-app-backend.onrender.com)
   if (typeof window !== 'undefined') {
     const host = window.location.hostname
+    // If running directly on Railway, use same-origin relative URLs
+    if (host.includes('.up.railway.app')) {
+      return ''
+    }
     if (host.includes('.onrender.com')) {
       if (host.includes('-frontend.')) {
         return `https://${host.replace('-frontend.', '-backend.')}`
@@ -36,7 +40,7 @@ export function getApiBaseUrl(): string {
       // Standard default blueprint service name
       return 'https://giotag-backend.onrender.com'
     }
-    if (host.includes('.vercel.app') || host.includes('.netlify.app') || host.includes('.up.railway.app')) {
+    if (host.includes('.vercel.app') || host.includes('.netlify.app')) {
       return 'https://poultry-project-eggcount-production.up.railway.app'
     }
   }
@@ -46,7 +50,16 @@ export function getApiBaseUrl(): string {
 }
 
 export function getTrackerBaseUrl(): string {
-  const base = getApiBaseUrl()
+  const base = getApiBaseUrl().trim().replace(/\/+$/, '')
+  if (!base) {
+    return '/api/tracker'
+  }
+  if (base.endsWith('/api/tracker')) {
+    return base
+  }
+  if (base.endsWith('/api')) {
+    return `${base}/tracker`
+  }
   return `${base}/api/tracker`
 }
 

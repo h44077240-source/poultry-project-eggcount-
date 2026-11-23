@@ -160,13 +160,42 @@ async def health():
     }
 
 
-@app.get("/", tags=["Root"])
-async def root():
-    return {
-        "message": f"Welcome to {settings.APP_NAME}",
-        "docs": "/docs",
-        "version": settings.APP_VERSION,
-    }
+# ─── Static Frontend Serving (SPA) ──────────────────────────────────────────
+from fastapi.responses import FileResponse
+
+static_dir = Path(__file__).resolve().parent.parent / "static"
+if not static_dir.exists():
+    static_dir = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+
+if static_dir.exists() and (static_dir / "index.html").exists():
+    if (static_dir / "assets").exists():
+        app.mount("/assets", StaticFiles(directory=str(static_dir / "assets")), name="static_assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_spa_frontend(request: Request, full_path: str):
+        # Allow API routes, docs, and uploads to pass through
+        if (full_path.startswith("api/") or 
+            full_path.startswith("docs") or 
+            full_path.startswith("redoc") or 
+            full_path.startswith("openapi.json") or
+            full_path.startswith("uploads/")):
+            raise HTTPException(status_code=404, detail="Not Found")
+        
+        target = static_dir / full_path
+        if target.is_file():
+            return FileResponse(str(target))
+        index = static_dir / "index.html"
+        if index.is_file():
+            return FileResponse(str(index))
+        return JSONResponse(status_code=404, content={"detail": "Not Found"})
+else:
+    @app.get("/", tags=["Root"])
+    async def root():
+        return {
+            "message": f"Welcome to {settings.APP_NAME}",
+            "docs": "/docs",
+            "version": settings.APP_VERSION,
+        }
 
 
 # ─── Global error handler ─────────────────────────────────────────────────────
