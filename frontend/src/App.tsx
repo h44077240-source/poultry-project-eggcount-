@@ -20,7 +20,6 @@ const SettingsPage = lazy(() => import('./pages/SettingsPage'))
 const EggCounterPage = lazy(() => import('./pages/EggCounterPage'))
 const EggAIChatPage = lazy(() => import('./pages/EggAIChatPage'))
 const HenCombTrackingPage = lazy(() => import('./pages/HenCombTrackingPage'))
-const DronePage = lazy(() => import('./pages/DronePage'))
 
 const PageLoader = () => (
   <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', width: '100vw', backgroundColor: 'var(--bg-main)' }}>
@@ -46,7 +45,6 @@ export default function App() {
             <Route path="/egg-counter"     element={<EggCounterPage />} />
             <Route path="/egg-ai-chat"    element={<EggAIChatPage />} />
             <Route path="/hen-comb-tracking" element={<HenCombTrackingPage />} />
-            <Route path="/drone"           element={<DronePage />} />
             <Route path="/blockchain"      element={<BlockchainPage />} />
             <Route path="/audit-logs"      element={<AuditLogsPage />} />
             <Route path="/reports"         element={<ReportsPage />} />
