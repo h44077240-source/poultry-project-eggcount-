@@ -53,16 +53,13 @@ services:
   - type: web
     name: giotag-frontend
     env: static
-    buildCommand: "cd frontend && npm install --legacy-peer-deps && npm run build"
-    staticPublishPath: frontend/dist
+    buildCommand: "node build-frontend.js"
+    staticPublishPath: dist
     envVars:
       - key: NODE_VERSION
         value: 20
       - key: VITE_API_URL
-        fromService:
-          type: web
-          name: giotag-backend
-          envVarKey: RENDER_EXTERNAL_URL
+        value: https://poultry-project-eggcount-production.up.railway.app
     routes:
       - type: rewrite
         source: /*
