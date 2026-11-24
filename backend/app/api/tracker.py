@@ -106,6 +106,7 @@ def reset_tracking():
     if flask_app:
         flask_app.current_total_count = 0
         flask_app.current_live_count = 0
+        flask_app.active_stream_session_id = getattr(flask_app, 'active_stream_session_id', 0) + 1
     return {"success": True}
 
 # ─── Flask Legacy Integration for Hen Comb Tracking ────────────────────────────

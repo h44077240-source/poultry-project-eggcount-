@@ -480,7 +480,7 @@ export default function HenCombTrackingPage() {
     setPendingVideoFile(file)
     setShowUploadChoiceModal(false)
 
-    // Fast Instant Check: If video file exists on server, skip upload completely and stream immediately (0s wait!)
+    // If the exact file already exists on server, stream it immediately; otherwise upload fresh file
     const activeBackendUrl = getTrackerBaseUrl()
     try {
       const checkResp = await fetch(`${activeBackendUrl}/check_video/${encodeURIComponent(file.name)}`, { cache: 'no-store' })
@@ -510,35 +510,7 @@ export default function HenCombTrackingPage() {
       console.warn('Fast check_video skipped:', err)
     }
 
-    // Fast Instant Fallback for Farm / DJI Videos: Check pre-loaded DJI farm video on server (0s wait!)
-    if (/dji|0026|farm|hen|video/i.test(file.name) || file.size > 20 * 1024 * 1024) {
-      try {
-        const djiResp = await fetch(`${activeBackendUrl}/check_video/DJI_20260911155924_0026_S.MP4`, { cache: 'no-store' })
-        if (djiResp.ok) {
-          const djiData = await djiResp.json()
-          if (djiData && djiData.exists && djiData.filename) {
-            try { await fetch(`${activeBackendUrl}/reset`, { method: 'POST' }) } catch (e) {}
-            setActiveLoadingCard(null)
-            setIsProcessing(false)
-            setUploadProgress(null)
-            setUploadStatusText(null)
-            setIsStreamLoading(false)
-            setCurrentSessionSource('UPLOADED_VIDEO')
-            setCurrentVideoFilename(djiData.filename)
-            setTotalCount(0)
-            setVisibleCount(0)
-            setStreamUrl(`${activeBackendUrl}/stream_video/${encodeURIComponent(djiData.filename)}?t=${Date.now()}`)
-            setStreamMode('video')
-            if (e.target) e.target.value = ''
-            return
-          }
-        }
-      } catch (err) {
-        console.warn('DJI check_video fallback skipped:', err)
-      }
-    }
-
-    // New file: upload to server and start 30 FPS stream
+    // Always upload user's actual selected video file!
     startCloudUpload(file)
     if (e.target) e.target.value = ''
   }

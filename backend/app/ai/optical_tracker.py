@@ -422,7 +422,7 @@ class OpticalHenTracker:
                     return z[0] <= x <= z[2] and z[1] <= y <= z[3]
 
                 # Stage 1: Match active and remembered tracks with stable radius
-                MAX_LOST_MEMORY = 30
+                MAX_LOST_MEMORY = 450
                 active_matches = []
                 for det_idx, det in enumerate(fresh):
                     cx, cy = det["center"]
@@ -475,7 +475,7 @@ class OpticalHenTracker:
                         hdata["lost"] += 1
 
                 # Stage 2: Register New Hen entering the zone (Multi-frame confirmation eliminates all spurious 1-frame noise)
-                min_new_dist = 24.0
+                min_new_dist = 38.0
                 unmatched_fresh = [det for det_idx, det in enumerate(fresh) if det_idx not in used_dets and det.get("conf", 0.0) >= 0.18]
                 unmatched_fresh.sort(key=lambda d: -d["center"][1])
                 updated_t = set()
@@ -486,17 +486,17 @@ class OpticalHenTracker:
                     if not is_in_zone(cx, cy):
                         continue
 
-                    # Only block if too close to a known tracked hen (prevents duplicate box on same comb)
+                    # Only block if too close to ANY known tracked hen (prevents duplicate box on same comb / cage slot)
                     is_near_active = any(
                         math.hypot(cx - h["center"][0], cy - h["center"][1]) < min_new_dist or _box_iou(det["box"], h["box"]) > 0.25
-                        for h in self.hens.values() if h["lost"] <= 45
+                        for h in self.hens.values()
                     )
                     if is_near_active:
                         continue
 
                     # Match against tentative tracklets
                     matched_tid = None
-                    best_t_dist = 28.0
+                    best_t_dist = 32.0
                     for tid, tdata in self.tentative_hens.items():
                         dist = math.hypot(cx - tdata["center"][0], cy - tdata["center"][1])
                         if dist < best_t_dist:
@@ -549,7 +549,7 @@ class OpticalHenTracker:
                 left_zone = (z is not None and not (z[0] <= cx <= z[2] and z[1] <= cy <= z[3]))
                 exited_screen = (cx < 10 or cx > fw - 10 or cy < 10 or cy > fh - 10 or
                                  b[2] < 5 or b[0] > fw - 5 or b[3] < 5 or b[1] > fh - 5)
-                lost_too_long = self.hens[hid]["lost"] > 25
+                lost_too_long = self.hens[hid]["lost"] > 600
                 if left_zone or exited_screen or lost_too_long:
                     del self.hens[hid]
 
@@ -563,7 +563,7 @@ class OpticalHenTracker:
             z = getattr(self, '_zone', None)
             candidates = [
                 hid for hid, d in self.hens.items()
-                if d["lost"] <= 8 and d.get("hits", 0) >= 1 and (z is None or (z[0] <= d["center"][0] <= z[2] and z[1] <= d["center"][1] <= z[3])) and d["box"][1] > 4 and 10 <= d["center"][0] <= fw - 10 and 10 <= d["center"][1] <= fh - 10
+                if d["lost"] <= 6 and d.get("hits", 0) >= 1 and (z is None or (z[0] <= d["center"][0] <= z[2] and z[1] <= d["center"][1] <= z[3])) and d["box"][1] > 4 and 10 <= d["center"][0] <= fw - 10 and 10 <= d["center"][1] <= fh - 10
             ]
             candidates.sort(key=lambda hid: (-self.hens[hid].get("hits", 0), self.hens[hid]["lost"]))
 

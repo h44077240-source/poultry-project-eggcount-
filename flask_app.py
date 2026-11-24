@@ -612,14 +612,14 @@ def _sync_generate_frames(video_source, ref_settings=None):
                 for d_idx, d in enumerate(fresh):
                     dcx, dcy = d["center"]
                     for hid, h in hens.items():
-                        if h["lost"] > 60:
+                        if h["lost"] > 600:
                             continue
                         hx, hy = h["center"]
                         homx, homy = h.get("home", (hx, hy))
                         dist = min(math.hypot(dcx - hx, dcy - hy), math.hypot(dcx - homx, dcy - homy))
                         iou = compute_iou(d["box"], h["box"])
-                        if dist <= 38.0 or iou > 0.12:
-                            cost = (1.0 - iou) * 0.4 + (dist / 38.0) * 0.6
+                        if dist <= 42.0 or iou > 0.12:
+                            cost = (1.0 - iou) * 0.4 + (dist / 42.0) * 0.6
                             cands.append((cost, d_idx, hid))
 
                 cands.sort(key=lambda x: x[0])
@@ -659,18 +659,18 @@ def _sync_generate_frames(video_source, ref_settings=None):
                     if not (12 <= dcx <= OUT_W - 12 and 12 <= dcy <= OUT_H - 12):
                         continue
 
-                    # Check if near ANY active or recent confirmed hen (prevents duplicate IDs for bobbing/nodding hens)
+                    # Persistent Memory Check: Never register a new hen if near ANY known hen slot ever recorded
                     is_near = any(
                         min(math.hypot(dcx - h["center"][0], dcy - h["center"][1]),
-                            math.hypot(dcx - h.get("home", h["center"])[0], dcy - h.get("home", h["center"])[1])) < 24.0
-                        for h in hens.values() if h["lost"] <= 20
+                            math.hypot(dcx - h.get("home", h["center"])[0], dcy - h.get("home", h["center"])[1])) < 38.0
+                        for h in hens.values()
                     )
                     if is_near:
                         continue
 
                     # Match against tentative tracklets
                     matched_tid = None
-                    best_t_dist = 28.0
+                    best_t_dist = 32.0
                     for tid, tdata in tentative_hens.items():
                         dist = math.hypot(dcx - tdata["center"][0], dcy - tdata["center"][1])
                         if dist < best_t_dist:
@@ -726,15 +726,14 @@ def _sync_generate_frames(video_source, ref_settings=None):
                 cx, cy = hens[hid]["center"]
                 exited_screen = (cx < 10 or cx > OUT_W - 10 or cy < 10 or cy > OUT_H - 10 or
                                  b[2] < 5 or b[0] > OUT_W - 5 or b[3] < 5 or b[1] > OUT_H - 5)
-                lost_too_long = hens[hid]["lost"] > 25
+                lost_too_long = hens[hid]["lost"] > 600
                 if exited_screen or lost_too_long:
                     del hens[hid]
 
-            # 5. Visible hens: actively tracked on-screen
-            # When a hen exits the screen, its box leaves the screen cleanly within 0.25s
+            # 5. Visible hens: actively tracked on-screen (hides box within 0.2s when hen looks down)
             render_hens = [
                 hid for hid, h in hens.items()
-                if h["lost"] <= 8 and (10 <= h["center"][0] <= OUT_W - 10 and 10 <= h["center"][1] <= OUT_H - 10)
+                if h["lost"] <= 6 and (10 <= h["center"][0] <= OUT_W - 10 and 10 <= h["center"][1] <= OUT_H - 10)
             ]
             
             # Sort for stable rendering order
