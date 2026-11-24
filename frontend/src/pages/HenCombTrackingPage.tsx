@@ -1478,12 +1478,12 @@ export default function HenCombTrackingPage() {
           <source src="/real_white_hens_bg.mp4" type="video/mp4" />
         </video>
 
-        {/* Soft frosted glass tint so real white hens moving in farm are clearly visible, while text & cards remain crisp */}
+        {/* Theme-adaptive frosted glass tint so real white hens moving in farm are clearly visible */}
         <div
+          className="poultry-bg-overlay"
           style={{
             position: 'absolute',
             inset: 0,
-            background: 'linear-gradient(180deg, rgba(248, 250, 252, 0.48) 0%, rgba(241, 245, 249, 0.58) 50%, rgba(226, 232, 240, 0.65) 100%)',
             backdropFilter: 'blur(1.5px)',
             WebkitBackdropFilter: 'blur(1.5px)',
           }}
@@ -1853,9 +1853,9 @@ export default function HenCombTrackingPage() {
           style={{
             padding: '20px 22px',
             borderRadius: 16,
-            border: '1px solid #e2e8f0',
-            background: 'linear-gradient(135deg, #ffffff 0%, rgba(16,185,129,0.04) 100%)',
-            boxShadow: '0 4px 15px -2px rgba(0,0,0,0.04)',
+            border: '1px solid var(--border-default)',
+            background: 'var(--bg-card)',
+            boxShadow: 'var(--shadow-sm)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
@@ -1867,10 +1867,10 @@ export default function HenCombTrackingPage() {
               <Calendar size={14} color="#059669" />
               <span>Today's Total Count</span>
             </div>
-            <div style={{ fontSize: '0.78rem', color: '#64748b', marginTop: 3 }}>
+            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 3 }}>
               {new Date().toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
             </div>
-            <div style={{ fontSize: '2.1rem', fontWeight: 800, color: '#0f172a', marginTop: 6, lineHeight: 1 }}>
+            <div style={{ fontSize: '2.1rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: 6, lineHeight: 1 }}>
               {todayTotalHens + (streamMode ? totalCount : 0)}
               <span style={{ fontSize: '0.9rem', fontWeight: 600, color: '#059669', marginLeft: 6 }}>hens</span>
             </div>
@@ -1896,9 +1896,9 @@ export default function HenCombTrackingPage() {
           style={{
             padding: '20px 22px',
             borderRadius: 16,
-            border: '1px solid #e2e8f0',
-            background: 'linear-gradient(135deg, #ffffff 0%, rgba(59,130,246,0.04) 100%)',
-            boxShadow: '0 4px 15px -2px rgba(0,0,0,0.04)',
+            border: '1px solid var(--border-default)',
+            background: 'var(--bg-card)',
+            boxShadow: 'var(--shadow-sm)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
@@ -1910,10 +1910,10 @@ export default function HenCombTrackingPage() {
               <Activity size={14} color="#2563eb" />
               <span>All-Time Verified Hens</span>
             </div>
-            <div style={{ fontSize: '0.78rem', color: '#64748b', marginTop: 3 }}>
+            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 3 }}>
               Total across all recorded days
             </div>
-            <div style={{ fontSize: '2.1rem', fontWeight: 800, color: '#0f172a', marginTop: 6, lineHeight: 1 }}>
+            <div style={{ fontSize: '2.1rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: 6, lineHeight: 1 }}>
               {allTimeHens + (streamMode ? totalCount : 0)}
               <span style={{ fontSize: '0.9rem', fontWeight: 600, color: '#2563eb', marginLeft: 6 }}>hens</span>
             </div>
@@ -1939,9 +1939,9 @@ export default function HenCombTrackingPage() {
           style={{
             padding: '20px 22px',
             borderRadius: 16,
-            border: '1px solid #e2e8f0',
-            background: 'linear-gradient(135deg, #ffffff 0%, rgba(168,85,247,0.04) 100%)',
-            boxShadow: '0 4px 15px -2px rgba(0,0,0,0.04)',
+            border: '1px solid var(--border-default)',
+            background: 'var(--bg-card)',
+            boxShadow: 'var(--shadow-sm)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
@@ -1953,10 +1953,10 @@ export default function HenCombTrackingPage() {
               <History size={14} color="#7c3aed" />
               <span>Flock Tracking Days</span>
             </div>
-            <div style={{ fontSize: '0.78rem', color: '#64748b', marginTop: 3 }}>
+            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 3 }}>
               {savedSessions.length} total sessions archived
             </div>
-            <div style={{ fontSize: '2.1rem', fontWeight: 800, color: '#0f172a', marginTop: 6, lineHeight: 1 }}>
+            <div style={{ fontSize: '2.1rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: 6, lineHeight: 1 }}>
               {dailySummaries.length}
               <span style={{ fontSize: '0.9rem', fontWeight: 600, color: '#7c3aed', marginLeft: 6 }}>days logged</span>
             </div>
@@ -2572,8 +2572,8 @@ export default function HenCombTrackingPage() {
 
         {/* Date-Wise Daily Aggregate Breakdown Cards */}
         {dailySummaries.length > 0 && (
-          <div style={{ padding: '18px 24px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-            <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ padding: '18px 24px', background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border-default)' }}>
+            <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
               <Calendar size={14} color="#059669" />
               <span>Daily Total Hens Counted (Date-Wise Summary)</span>
             </div>
@@ -2582,16 +2582,16 @@ export default function HenCombTrackingPage() {
                 <div
                   key={day.dateKey}
                   style={{
-                    background: day.isToday ? 'linear-gradient(135deg, #ffffff 0%, #ecfdf5 100%)' : '#ffffff',
-                    border: day.isToday ? '2px solid #10b981' : '1px solid #e2e8f0',
+                    background: day.isToday ? 'linear-gradient(135deg, var(--bg-card) 0%, rgba(16,185,129,0.12) 100%)' : 'var(--bg-card)',
+                    border: day.isToday ? '2px solid #10b981' : '1px solid var(--border-default)',
                     borderRadius: 12,
                     padding: '14px 16px',
-                    boxShadow: '0 2px 6px rgba(0,0,0,0.03)',
+                    boxShadow: 'var(--shadow-sm)',
                     position: 'relative'
                   }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#0f172a' }}>
+                    <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)' }}>
                       {day.formattedDate}
                     </div>
                     {day.isToday && (
@@ -2604,9 +2604,9 @@ export default function HenCombTrackingPage() {
                     <span style={{ fontSize: '1.6rem', fontWeight: 800, color: '#059669', lineHeight: 1 }}>
                       {day.totalHens + (day.isToday && streamMode ? totalCount : 0)}
                     </span>
-                    <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b' }}>total hens</span>
+                    <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>total hens</span>
                   </div>
-                  <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: 6, display: 'flex', justifyContent: 'space-between' }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 6, display: 'flex', justifyContent: 'space-between' }}>
                     <span>{day.sessionsCount} {day.sessionsCount === 1 ? 'session' : 'sessions'}</span>
                     <span>Peak {day.maxVisible} in frame</span>
                   </div>
@@ -2621,7 +2621,7 @@ export default function HenCombTrackingPage() {
             style={{
               padding: '50px 24px',
               textAlign: 'center',
-              background: '#f8fafc'
+              background: 'var(--bg-elevated)'
             }}
           >
             <div
@@ -2629,7 +2629,7 @@ export default function HenCombTrackingPage() {
                 width: 56,
                 height: 56,
                 borderRadius: '50%',
-                background: '#f1f5f9',
+                background: 'var(--bg-card)',
                 display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -2638,37 +2638,37 @@ export default function HenCombTrackingPage() {
             >
               <Film size={28} color="#94a3b8" />
             </div>
-            <div style={{ fontWeight: 700, fontSize: '1.05rem', color: '#1e293b' }}>
+            <div style={{ fontWeight: 700, fontSize: '1.05rem', color: 'var(--text-primary)' }}>
               No Hen Count Sessions Saved Yet
             </div>
-            <div style={{ fontSize: '0.85rem', color: '#64748b', marginTop: 4, maxWidth: 460, margin: '6px auto 0' }}>
+            <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: 4, maxWidth: 460, margin: '6px auto 0' }}>
               Upload a video or stream from your phone camera and click "Save Count Record" to archive verified counts here.
             </div>
           </div>
         ) : (
-          <div style={{ overflowX: 'auto', background: '#ffffff' }}>
+          <div style={{ overflowX: 'auto', background: 'var(--bg-card)' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.88rem' }}>
               <thead>
-                <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
-                  <th style={{ padding: '14px 20px', fontWeight: 800, color: '#1e293b', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                <tr style={{ background: 'var(--bg-elevated)', borderBottom: '2px solid var(--border-default)' }}>
+                  <th style={{ padding: '14px 20px', fontWeight: 800, color: 'var(--text-primary)', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                     Date & Time
                   </th>
-                  <th style={{ padding: '14px 20px', fontWeight: 800, color: '#1e293b', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  <th style={{ padding: '14px 20px', fontWeight: 800, color: 'var(--text-primary)', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                     Video Source
                   </th>
-                  <th style={{ padding: '14px 20px', fontWeight: 800, color: '#1e293b', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  <th style={{ padding: '14px 20px', fontWeight: 800, color: 'var(--text-primary)', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                     Duration
                   </th>
-                  <th style={{ padding: '14px 20px', fontWeight: 800, color: '#1e293b', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  <th style={{ padding: '14px 20px', fontWeight: 800, color: 'var(--text-primary)', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                     Total Hens
                   </th>
-                  <th style={{ padding: '14px 20px', fontWeight: 800, color: '#1e293b', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  <th style={{ padding: '14px 20px', fontWeight: 800, color: 'var(--text-primary)', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                     Visible Heads
                   </th>
-                  <th style={{ padding: '14px 20px', fontWeight: 800, color: '#1e293b', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  <th style={{ padding: '14px 20px', fontWeight: 800, color: 'var(--text-primary)', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                     Notes
                   </th>
-                  <th style={{ padding: '14px 20px', fontWeight: 800, color: '#1e293b', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'center' }}>
+                  <th style={{ padding: '14px 20px', fontWeight: 800, color: 'var(--text-primary)', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'center' }}>
                     Action
                   </th>
                 </tr>
@@ -2679,13 +2679,13 @@ export default function HenCombTrackingPage() {
                     key={session.id}
                     className="history-row"
                     style={{
-                      borderBottom: idx === savedSessions.length - 1 ? 'none' : '1px solid #f1f5f9',
-                      background: '#ffffff',
+                      borderBottom: idx === savedSessions.length - 1 ? 'none' : '1px solid var(--border-subtle)',
+                      background: 'var(--bg-card)',
                       transition: 'background 0.15s'
                     }}
                   >
                     <td style={{ padding: '16px 20px', whiteSpace: 'nowrap' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, color: '#0f172a' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, color: 'var(--text-primary)' }}>
                         <Calendar size={15} color="#059669" />
                         <span>{new Date(session.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span>
                       </div>

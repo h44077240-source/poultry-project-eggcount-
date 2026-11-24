@@ -5,7 +5,7 @@
 
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 
-/* ─── CSS Variables ─── */
+/* ─── CSS Variables (Dark Theme by default, Light Theme via .light) ─── */
 :root {
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
 
@@ -21,25 +21,25 @@
   --brand-800: #3730a3;
   --brand-900: #312e81;
 
-  /* Background - Full White Theme */
-  --bg-base:      #f4f7f6;
-  --bg-surface:   rgba(255, 255, 255, 0.85);
-  --bg-card:      rgba(255, 255, 255, 0.95);
-  --bg-elevated:  #ffffff;
-  --bg-input:     #ffffff;
-  --bg-hover:     rgba(99, 102, 241, 0.05);
+  /* Dark Theme Palette (Default) */
+  --bg-base:      #0b0f19;
+  --bg-surface:   rgba(15, 23, 42, 0.90);
+  --bg-card:      rgba(30, 41, 59, 0.75);
+  --bg-elevated:  #1e293b;
+  --bg-input:     rgba(15, 23, 42, 0.85);
+  --bg-hover:     rgba(255, 255, 255, 0.08);
 
-  /* Text */
-  --text-primary:   #1e293b;
-  --text-secondary: #475569;
-  --text-muted:     #64748b;
-  --text-disabled:  #94a3b8;
+  /* Dark Text */
+  --text-primary:   #f8fafc;
+  --text-secondary: #cbd5e1;
+  --text-muted:     #94a3b8;
+  --text-disabled:  #64748b;
 
-  /* Borders */
-  --border-subtle:  rgba(0, 0, 0, 0.06);
-  --border-default: rgba(0, 0, 0, 0.10);
-  --border-strong:  rgba(0, 0, 0, 0.18);
-  --border-brand:   var(--brand-500);
+  /* Dark Borders */
+  --border-subtle:  rgba(255, 255, 255, 0.08);
+  --border-default: rgba(255, 255, 255, 0.15);
+  --border-strong:  rgba(255, 255, 255, 0.28);
+  --border-brand:   #10b981;
 
   /* Status colors */
   --status-verified:   #10b981;
@@ -60,12 +60,40 @@
   --radius-xl: 20px;
 
   /* Shadows */
-  --shadow-sm: 0 1px 3px rgba(0,0,0,0.4);
-  --shadow-md: 0 4px 16px rgba(0,0,0,0.35);
-  --shadow-lg: 0 8px 32px rgba(0,0,0,0.5);
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.5);
+  --shadow-md: 0 4px 16px rgba(0,0,0,0.45);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,0.6);
 
   /* Transitions */
   --transition: 0.2s cubic-bezier(0.4,0,0.2,1);
+}
+
+/* ─── Light Mode Theme Variables ─── */
+:root.light {
+  /* Light Theme Palette */
+  --bg-base:      #f4f6f8;
+  --bg-surface:   rgba(255, 255, 255, 0.92);
+  --bg-card:      #ffffff;
+  --bg-elevated:  #f8fafc;
+  --bg-input:     #ffffff;
+  --bg-hover:     rgba(0, 0, 0, 0.05);
+
+  /* Light Text */
+  --text-primary:   #0f172a;
+  --text-secondary: #334155;
+  --text-muted:     #64748b;
+  --text-disabled:  #94a3b8;
+
+  /* Light Borders */
+  --border-subtle:  rgba(0, 0, 0, 0.06);
+  --border-default: rgba(0, 0, 0, 0.12);
+  --border-strong:  rgba(0, 0, 0, 0.22);
+  --border-brand:   #059669;
+
+  /* Light Shadows */
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.06);
+  --shadow-md: 0 4px 16px rgba(0,0,0,0.08);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,0.12);
 }
 
 /* ─── Reset ─── */
@@ -75,11 +103,19 @@ html { font-size: 16px; -webkit-font-smoothing: antialiased; }
 
 body {
   font-family: var(--font-sans);
-  background: radial-gradient(circle at top right, #e0e7ff, #f8fafc, #f1f5f9);
+  background: var(--bg-base);
+  background-image: radial-gradient(circle at top right, rgba(99, 102, 241, 0.12), transparent 45%),
+                    radial-gradient(circle at bottom left, rgba(16, 185, 129, 0.08), transparent 45%);
   background-attachment: fixed;
   color: var(--text-primary);
   min-height: 100vh;
   overflow-x: hidden;
+  transition: background-color var(--transition), color var(--transition);
+}
+
+:root.light body {
+  background-color: #f4f6f8;
+  background-image: radial-gradient(circle at top right, #e0e7ff, #f8fafc 40%, #f1f5f9);
 }
 
 a { color: inherit; text-decoration: none; }
@@ -88,11 +124,11 @@ input, select, textarea { font-family: inherit; }
 img { max-width: 100%; }
 
 /* ─── Typography ─── */
-h1 { font-size: 2rem;    font-weight: 800; line-height: 1.2; }
-h2 { font-size: 1.5rem;  font-weight: 700; line-height: 1.3; }
-h3 { font-size: 1.25rem; font-weight: 600; line-height: 1.4; }
-h4 { font-size: 1.1rem;  font-weight: 600; }
-h5 { font-size: 0.95rem; font-weight: 600; }
+h1 { font-size: 2rem;    font-weight: 800; line-height: 1.2; color: var(--text-primary); }
+h2 { font-size: 1.5rem;  font-weight: 700; line-height: 1.3; color: var(--text-primary); }
+h3 { font-size: 1.25rem; font-weight: 600; line-height: 1.4; color: var(--text-primary); }
+h4 { font-size: 1.1rem;  font-weight: 600; color: var(--text-primary); }
+h5 { font-size: 0.95rem; font-weight: 600; color: var(--text-primary); }
 p  { line-height: 1.6; color: var(--text-secondary); }
 
 /* ─── Layout ─── */
@@ -104,18 +140,25 @@ p  { line-height: 1.6; color: var(--text-secondary); }
 .sidebar {
   width: var(--sidebar-width);
   min-height: 100vh;
-  background-image: linear-gradient(rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0.7)), url('/bg-image.png');
-  background-size: cover;
-  background-position: center;
-  backdrop-filter: blur(15px);
-  -webkit-backdrop-filter: blur(15px);
-  border-right: 1px solid rgba(0, 0, 0, 0.08);
+  background-color: var(--bg-surface);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-right: 1px solid var(--border-subtle);
   display: flex;
   flex-direction: column;
   position: fixed;
   top: 0; left: 0; bottom: 0;
   z-index: 100;
   overflow-y: auto;
+  transition: background-color var(--transition), border-color var(--transition);
+}
+
+:root:not(.light) .sidebar {
+  background-image: linear-gradient(rgba(11, 15, 25, 0.92), rgba(15, 23, 42, 0.96)), url('/bg-image.png');
+}
+
+:root.light .sidebar {
+  background-image: linear-gradient(rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0.92)), url('/bg-image.png');
 }
 
 .main-content {
@@ -128,10 +171,10 @@ p  { line-height: 1.6; color: var(--text-secondary); }
 
 .topbar {
   height: var(--header-height);
-  background: rgba(255, 255, 255, 0.85);
+  background: var(--bg-surface);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  border-bottom: 1px solid var(--border-subtle);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -139,6 +182,7 @@ p  { line-height: 1.6; color: var(--text-secondary); }
   position: sticky;
   top: 0;
   z-index: 50;
+  transition: background-color var(--transition), border-color var(--transition);
 }
 
 .mobile-menu-btn {
@@ -1074,53 +1118,60 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 .glow-suspicious{ box-shadow: 0 0 16px rgba(239,68,68,0.2); }
 .glow-pending   { box-shadow: 0 0 16px rgba(99,102,241,0.2); }
 
-/* ─── Light Mode Theme overrides ─── */
-:root.light {
-  /* Background */
-  --bg-base:      #f8fafc; /* slate-50 */
-  --bg-surface:   #ffffff;
-  --bg-card:      #ffffff;
-  --bg-elevated:  #f1f5f9; /* slate-100 */
-  --bg-input:     #f1f5f9;
-  --bg-hover:     #e2e8f0; /* slate-200 */
+/* ─── Real Poultry Video Background Theme Overlay ─── */
+.poultry-bg-overlay {
+  background: linear-gradient(180deg, rgba(11, 15, 25, 0.72) 0%, rgba(15, 23, 42, 0.82) 50%, rgba(11, 15, 25, 0.90) 100%);
+  transition: background var(--transition);
+}
 
-  /* Text */
-  --text-primary:   #0f172a; /* slate-900 */
-  --text-secondary: #334155; /* slate-700 */
-  --text-muted:     #64748b; /* slate-500 */
-  --text-disabled:  #94a3b8; /* slate-400 */
+:root.light .poultry-bg-overlay {
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.48) 0%, rgba(241, 245, 249, 0.58) 50%, rgba(226, 232, 240, 0.65) 100%);
+}
 
-  /* Borders */
-  --border-subtle:  rgba(15,23,42,0.06);
-  --border-default: rgba(15,23,42,0.10);
-  --border-strong:  rgba(15,23,42,0.18);
+/* ─── Mode Cards in Hen Page for Dark/Light ─── */
+:root:not(.light) .ref-mode-btn {
+  background: rgba(30, 41, 59, 0.75) !important;
+  color: #f8fafc !important;
+}
 
-  /* Shadows override for light mode */
-  --shadow-sm: 0 1px 3px rgba(0,0,0,0.05);
-  --shadow-md: 0 4px 16px rgba(0,0,0,0.06);
-  --shadow-lg: 0 8px 32px rgba(0,0,0,0.08);
+:root:not(.light) .ref-mode-btn > div > div {
+  color: #f8fafc !important;
+}
+
+:root.light .ref-mode-btn {
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.85)) !important;
+  color: #0f172a !important;
+}
+
+/* ─── Table Theme Adjustments ─── */
+thead tr {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+:root.light thead tr {
+  background: #f8fafc;
+}
+
+tr:hover td {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+:root.light tr:hover td {
+  background: #f1f5f9;
 }
 
 :root.light .nav-item.active {
-  background: linear-gradient(135deg, rgba(99,102,241,0.12), rgba(79,70,229,0.06));
-  color: var(--brand-600);
-  border: 1px solid rgba(99,102,241,0.15);
+  background: linear-gradient(90deg, rgba(16, 185, 129, 0.15), rgba(16, 185, 129, 0.04));
+  color: #047857;
+  border: 1px solid rgba(16, 185, 129, 0.25);
 }
 
 :root.light .error-box {
   color: #b91c1c;
 }
 
-:root.light thead tr {
-  background: rgba(0,0,0,0.02);
-}
-
-:root.light tr:hover td {
-  background: rgba(0,0,0,0.01);
-}
-
 :root.light .badge-pending {
-  color: var(--brand-600);
+  color: #4f46e5;
   border-color: rgba(99,102,241,0.3);
 }
 
