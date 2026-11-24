@@ -163,11 +163,15 @@ async def health():
 # ─── Static Frontend Serving (SPA) ──────────────────────────────────────────
 from fastapi.responses import FileResponse
 
-static_dir = Path(__file__).resolve().parent.parent / "static"
-if not static_dir.exists():
-    static_dir = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+root_dir = Path(__file__).resolve().parent.parent.parent
+possible_dirs = [
+    root_dir / "dist",
+    root_dir / "frontend" / "dist",
+    Path(__file__).resolve().parent.parent / "static",
+]
+static_dir = next((d for d in possible_dirs if d.exists() and (d / "index.html").exists()), None)
 
-if static_dir.exists() and (static_dir / "index.html").exists():
+if static_dir and (static_dir / "index.html").exists():
     if (static_dir / "assets").exists():
         app.mount("/assets", StaticFiles(directory=str(static_dir / "assets")), name="static_assets")
 
