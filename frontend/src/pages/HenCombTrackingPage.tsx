@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
-import { Camera, Upload, RefreshCw, FileVideo, Maximize2, Minimize2, X, Video, Scan, CheckCircle2, Activity, Settings, Wifi, WifiOff, History, Trash2, Calendar, Clock, Film } from 'lucide-react'
+import { Camera, Upload, RefreshCw, FileVideo, Maximize2, Minimize2, X, Video, Scan, CheckCircle2, Activity, Settings, Wifi, WifiOff, History, Trash2, Calendar, Clock, Film, Layers } from 'lucide-react'
 import { getTrackerBaseUrl, getApiBaseUrl, setCustomBackendUrl } from '../utils/apiUrl'
 
 export default function HenCombTrackingPage() {
@@ -129,6 +129,64 @@ export default function HenCombTrackingPage() {
   useEffect(() => {
     fetchSavedSessions()
   }, [fetchSavedSessions])
+
+  // Group sessions by Day (Date) to compute Total Hens per Day with dates
+  const { dailySummaries, todayTotalHens, allTimeHens } = React.useMemo(() => {
+    const map = new Map<string, {
+      dateKey: string;
+      formattedDate: string;
+      isToday: boolean;
+      totalHens: number;
+      sessionsCount: number;
+      maxVisible: number;
+      totalDuration: number;
+    }>()
+
+    const todayDateObj = new Date()
+    const todayFormatted = todayDateObj.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+    const todayKey = todayDateObj.toISOString().slice(0, 10)
+
+    let allTime = 0
+
+    savedSessions.forEach((s) => {
+      const d = new Date(s.created_at)
+      const dateKey = isNaN(d.getTime()) ? 'Unknown' : d.toISOString().slice(0, 10)
+      const formattedDate = isNaN(d.getTime())
+        ? 'Unknown Date'
+        : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+      const isToday = formattedDate === todayFormatted || dateKey === todayKey
+
+      const count = Number(s.total_count) || 0
+      allTime += count
+
+      const existing = map.get(dateKey) || {
+        dateKey,
+        formattedDate,
+        isToday,
+        totalHens: 0,
+        sessionsCount: 0,
+        maxVisible: 0,
+        totalDuration: 0,
+      }
+
+      existing.totalHens += count
+      existing.sessionsCount += 1
+      existing.maxVisible = Math.max(existing.maxVisible, Number(s.visible_count) || 0)
+      existing.totalDuration += Number(s.video_duration) || 0
+
+      map.set(dateKey, existing)
+    })
+
+    const list = Array.from(map.values()).sort((a, b) => b.dateKey.localeCompare(a.dateKey))
+    const todayItem = map.get(todayKey) || list.find(item => item.isToday)
+    const todayHens = todayItem ? todayItem.totalHens : 0
+
+    return {
+      dailySummaries: list,
+      todayTotalHens: todayHens,
+      allTimeHens: allTime
+    }
+  }, [savedSessions])
 
   const saveCurrentSession = async () => {
     try {
@@ -1718,6 +1776,147 @@ export default function HenCombTrackingPage() {
 
 
 
+      {/* ─── Daily Flock Summary Cards (Date-wise Total Hens) ─── */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+          gap: 16,
+          width: '100%',
+          maxWidth: 1050,
+          margin: '0 auto 28px'
+        }}
+      >
+        {/* Card 1: Today's Total Hens */}
+        <div
+          className="card"
+          style={{
+            padding: '20px 22px',
+            borderRadius: 16,
+            border: '1px solid #e2e8f0',
+            background: 'linear-gradient(135deg, #ffffff 0%, rgba(16,185,129,0.04) 100%)',
+            boxShadow: '0 4px 15px -2px rgba(0,0,0,0.04)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 14
+          }}
+        >
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8rem', fontWeight: 700, color: '#059669', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              <Calendar size={14} color="#059669" />
+              <span>Today's Total Count</span>
+            </div>
+            <div style={{ fontSize: '0.78rem', color: '#64748b', marginTop: 3 }}>
+              {new Date().toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
+            </div>
+            <div style={{ fontSize: '2.1rem', fontWeight: 800, color: '#0f172a', marginTop: 6, lineHeight: 1 }}>
+              {todayTotalHens + (streamMode ? totalCount : 0)}
+              <span style={{ fontSize: '0.9rem', fontWeight: 600, color: '#059669', marginLeft: 6 }}>hens</span>
+            </div>
+          </div>
+          <div
+            style={{
+              width: 48,
+              height: 48,
+              borderRadius: 14,
+              background: 'rgba(16,185,129,0.12)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+          >
+            <CheckCircle2 size={24} color="#059669" />
+          </div>
+        </div>
+
+        {/* Card 2: All-Time Recorded Hens */}
+        <div
+          className="card"
+          style={{
+            padding: '20px 22px',
+            borderRadius: 16,
+            border: '1px solid #e2e8f0',
+            background: 'linear-gradient(135deg, #ffffff 0%, rgba(59,130,246,0.04) 100%)',
+            boxShadow: '0 4px 15px -2px rgba(0,0,0,0.04)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 14
+          }}
+        >
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8rem', fontWeight: 700, color: '#2563eb', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              <Activity size={14} color="#2563eb" />
+              <span>All-Time Verified Hens</span>
+            </div>
+            <div style={{ fontSize: '0.78rem', color: '#64748b', marginTop: 3 }}>
+              Total across all recorded days
+            </div>
+            <div style={{ fontSize: '2.1rem', fontWeight: 800, color: '#0f172a', marginTop: 6, lineHeight: 1 }}>
+              {allTimeHens + (streamMode ? totalCount : 0)}
+              <span style={{ fontSize: '0.9rem', fontWeight: 600, color: '#2563eb', marginLeft: 6 }}>hens</span>
+            </div>
+          </div>
+          <div
+            style={{
+              width: 48,
+              height: 48,
+              borderRadius: 14,
+              background: 'rgba(59,130,246,0.12)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+          >
+            <Layers size={24} color="#2563eb" />
+          </div>
+        </div>
+
+        {/* Card 3: Days Tracked & Sessions */}
+        <div
+          className="card"
+          style={{
+            padding: '20px 22px',
+            borderRadius: 16,
+            border: '1px solid #e2e8f0',
+            background: 'linear-gradient(135deg, #ffffff 0%, rgba(168,85,247,0.04) 100%)',
+            boxShadow: '0 4px 15px -2px rgba(0,0,0,0.04)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 14
+          }}
+        >
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8rem', fontWeight: 700, color: '#7c3aed', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              <History size={14} color="#7c3aed" />
+              <span>Flock Tracking Days</span>
+            </div>
+            <div style={{ fontSize: '0.78rem', color: '#64748b', marginTop: 3 }}>
+              {savedSessions.length} total sessions archived
+            </div>
+            <div style={{ fontSize: '2.1rem', fontWeight: 800, color: '#0f172a', marginTop: 6, lineHeight: 1 }}>
+              {dailySummaries.length}
+              <span style={{ fontSize: '0.9rem', fontWeight: 600, color: '#7c3aed', marginLeft: 6 }}>days logged</span>
+            </div>
+          </div>
+          <div
+            style={{
+              width: 48,
+              height: 48,
+              borderRadius: 14,
+              background: 'rgba(168,85,247,0.12)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+          >
+            <Clock size={24} color="#7c3aed" />
+          </div>
+        </div>
+      </div>
+
       {/* ─── 1. Main 4-Option Stream Selection View ─── */}
       {!streamMode ? (
         <div className="card" style={{ padding: '40px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
@@ -2003,6 +2202,38 @@ export default function HenCombTrackingPage() {
                 </div>
               </div>
 
+              {/* Card 1.5: Today's Daily Hen Count */}
+              <div
+                style={{
+                  background: 'linear-gradient(135deg, rgba(245,158,11,0.08) 0%, rgba(217,119,6,0.03) 100%)',
+                  border: '1px solid rgba(245,158,11,0.3)',
+                  padding: '16px 18px',
+                  borderRadius: 16,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  boxShadow: '0 4px 15px rgba(245,158,11,0.08)'
+                }}
+              >
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.78rem', fontWeight: 700, color: '#d97706', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    <Calendar size={13} color="#d97706" />
+                    <span>Today's Total ({new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })})</span>
+                  </div>
+                  <div style={{ fontSize: '0.78rem', color: '#64748b', marginTop: 2 }}>
+                    Daily flock aggregate
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: '1.7rem', fontWeight: 800, color: '#b45309', lineHeight: 1 }}>
+                    {todayTotalHens + totalCount}
+                  </div>
+                  <div style={{ fontSize: '0.72rem', color: '#94a3b8', fontWeight: 600 }}>
+                    hens today
+                  </div>
+                </div>
+              </div>
+
               {/* Card 2: Currently Visible Heads */}
               <div
                 style={{
@@ -2206,6 +2437,52 @@ export default function HenCombTrackingPage() {
             </button>
           </div>
         </div>
+
+        {/* Date-Wise Daily Aggregate Breakdown Cards */}
+        {dailySummaries.length > 0 && (
+          <div style={{ padding: '18px 24px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+            <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Calendar size={14} color="#059669" />
+              <span>Daily Total Hens Counted (Date-Wise Summary)</span>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+              {dailySummaries.map((day) => (
+                <div
+                  key={day.dateKey}
+                  style={{
+                    background: day.isToday ? 'linear-gradient(135deg, #ffffff 0%, #ecfdf5 100%)' : '#ffffff',
+                    border: day.isToday ? '2px solid #10b981' : '1px solid #e2e8f0',
+                    borderRadius: 12,
+                    padding: '14px 16px',
+                    boxShadow: '0 2px 6px rgba(0,0,0,0.03)',
+                    position: 'relative'
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#0f172a' }}>
+                      {day.formattedDate}
+                    </div>
+                    {day.isToday && (
+                      <span style={{ fontSize: '0.68rem', fontWeight: 700, background: '#10b981', color: '#ffffff', padding: '2px 6px', borderRadius: 6 }}>
+                        TODAY
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 8 }}>
+                    <span style={{ fontSize: '1.6rem', fontWeight: 800, color: '#059669', lineHeight: 1 }}>
+                      {day.totalHens + (day.isToday && streamMode ? totalCount : 0)}
+                    </span>
+                    <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b' }}>total hens</span>
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: 6, display: 'flex', justifyContent: 'space-between' }}>
+                    <span>{day.sessionsCount} {day.sessionsCount === 1 ? 'session' : 'sessions'}</span>
+                    <span>Peak {day.maxVisible} in frame</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {savedSessions.length === 0 ? (
           <div
