@@ -1400,10 +1400,10 @@ export default function HenCombTrackingPage() {
   return (
     <div style={{ maxWidth: 1400, margin: '0 auto', padding: '20px' }}>
       <h2 style={{ fontSize: '2rem', fontWeight: 800, marginBottom: 8, color: 'var(--text-primary, #1e293b)', textAlign: 'center' }}>
-        Hen Counting
+        Live AI Streaming
       </h2>
       <p style={{ color: 'var(--text-secondary, #475569)', textAlign: 'center', marginBottom: 20, fontSize: '1.05rem' }}>
-        Real-time Hen Counting & AI Tracking at normal speed
+        Real-time Hen Comb AI Detection & Tracking at normal speed
       </p>
 
       {/* Backend Status & Configuration Bar */}
