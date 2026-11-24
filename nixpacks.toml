@@ -1,5 +1,5 @@
 [phases.setup]
-nixPkgs = ["...", "python311", "nodejs_20", "ffmpeg", "libGL", "glib", "gcc-unwrapped", "zlib"]
+nixPkgs = ["...", "python311", "ffmpeg", "libGL", "glib", "gcc-unwrapped", "zlib"]
 nixLibs = ["...", "gcc-unwrapped", "zlib", "libGL", "glib"]
 
 [phases.install]
