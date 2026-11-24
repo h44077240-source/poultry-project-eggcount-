@@ -9,7 +9,7 @@ import {
 } from 'recharts'
 import {
   Image, CheckCircle, AlertTriangle, Clock, Users,
-  Smartphone, Blocks, TrendingUp, Shield, CheckSquare, Camera,
+  Smartphone, Blocks, TrendingUp, Shield,
   Calendar, Layers, Activity
 } from 'lucide-react'
 
@@ -143,88 +143,6 @@ export default function DashboardPage() {
               <Legend formatter={(v) => <span style={{ color:'#94a3b8', fontSize:11 }}>{v}</span>} />
             </PieChart>
           </ResponsiveContainer>
-        </div>
-      </div>
-
-      {/* Quick Actions Section */}
-      <div className="card" style={{ marginTop: '24px' }}>
-        <div className="card-header">
-          <h3 className="card-title">Quick Actions</h3>
-        </div>
-        <div style={{ padding: '24px', display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
-          <Link to="/hen-comb-tracking" style={{ textDecoration: 'none', flex: '1 1 300px' }}>
-            <div style={{ 
-              background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(16, 185, 129, 0.05) 100%)',
-              border: '1px solid rgba(16, 185, 129, 0.2)',
-              borderRadius: '12px',
-              padding: '24px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '20px',
-              transition: 'all 0.2s ease',
-              cursor: 'pointer'
-            }}
-            onMouseOver={(e) => {
-              e.currentTarget.style.transform = 'translateY(-2px)'
-              e.currentTarget.style.boxShadow = '0 8px 24px rgba(16, 185, 129, 0.15)'
-            }}
-            onMouseOut={(e) => {
-              e.currentTarget.style.transform = 'translateY(0)'
-              e.currentTarget.style.boxShadow = 'none'
-            }}
-            >
-              <div style={{ 
-                width: '64px', height: '64px', borderRadius: '16px', background: '#059669', 
-                display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 12px rgba(16, 185, 129, 0.4)'
-              }}>
-                <Activity color="white" size={32} />
-              </div>
-              <div>
-                <h3 style={{ fontSize: '1.25rem', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '4px' }}>Hen Counting AI Tracker</h3>
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem' }}>Automated hen head/comb tracking and flock counting with live/video stream.</p>
-              </div>
-              <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px', color: '#059669', fontWeight: '600', fontSize: '0.9rem' }}>
-                <Camera size={18} /> Open Tracker
-              </div>
-            </div>
-          </Link>
-
-          <Link to="/egg-counter" style={{ textDecoration: 'none', flex: '1 1 300px' }}>
-            <div style={{ 
-              background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(99, 102, 241, 0.05) 100%)',
-              border: '1px solid rgba(99, 102, 241, 0.2)',
-              borderRadius: '12px',
-              padding: '24px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '20px',
-              transition: 'all 0.2s ease',
-              cursor: 'pointer'
-            }}
-            onMouseOver={(e) => {
-              e.currentTarget.style.transform = 'translateY(-2px)'
-              e.currentTarget.style.boxShadow = '0 8px 24px rgba(99, 102, 241, 0.15)'
-            }}
-            onMouseOut={(e) => {
-              e.currentTarget.style.transform = 'translateY(0)'
-              e.currentTarget.style.boxShadow = 'none'
-            }}
-            >
-              <div style={{ 
-                width: '64px', height: '64px', borderRadius: '16px', background: '#6366f1', 
-                display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 12px rgba(99, 102, 241, 0.4)'
-              }}>
-                <CheckSquare color="white" size={32} />
-              </div>
-              <div>
-                <h3 style={{ fontSize: '1.25rem', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '4px' }}>Egg Counter AI Vision</h3>
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem' }}>Upload or capture photos to count and verify eggs instantly with deep learning.</p>
-              </div>
-              <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px', color: '#6366f1', fontWeight: '600', fontSize: '0.9rem' }}>
-                <Camera size={18} /> Open Counter
-              </div>
-            </div>
-          </Link>
         </div>
       </div>
 
