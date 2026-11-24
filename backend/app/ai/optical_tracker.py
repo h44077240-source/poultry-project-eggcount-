@@ -141,6 +141,9 @@ class OpticalHenTracker:
                         (((r_ch - np.maximum(g_ch, b_ch)) > 10) & (s_ch > 24) & (v_ch > 35))
                     )
 
+                    gray_f = cv2.cvtColor(f, cv2.COLOR_BGR2GRAY)
+                    sobel_f = np.abs(cv2.Sobel(gray_f, cv2.CV_64F, 1, 0, ksize=3))
+
                     for box, conf in zip(boxes, confs):
                         x1, y1, x2, y2 = map(int, box)
                         hw = x2 - x1
@@ -161,6 +164,20 @@ class OpticalHenTracker:
                             continue
                         if float(conf) < 0.28 and comb_px < 8:
                             continue
+
+                        # 1. Reject open-aisle equipment & sacks on floor (far right + no metal cage mesh wires)
+                        norm_x = (x1 + hw / 2.0) / float(fw)
+                        sx1, sy1 = max(0, int(x1 - 25)), max(0, int(y1 - 25))
+                        sx2, sy2 = min(fw - 1, int(x1 + hw + 25)), min(fh - 1, int(y1 + hh + 25))
+                        surround_wire_energy = np.mean(sobel_f[sy1:sy2, sx1:sx2])
+                        if norm_x > 0.65 and surround_wire_energy < 22.0:
+                            continue  # Inanimate equipment/sacks/basin in walkway outside cages
+
+                        # 2. Reject flat feed trough stains / trough rail
+                        aspect = hw / float(hh)
+                        norm_y = (y1 + hh / 2.0) / float(fh)
+                        if norm_y > 0.88 and aspect > 1.9:
+                            continue  # Horizontal metal trough lip / spilled feed
 
                         scale_factor = max(fw, fh) / 640.0
                         if has_red:
@@ -200,7 +217,7 @@ class OpticalHenTracker:
                             "diag": math.hypot(box_final[2] - box_final[0], box_final[3] - box_final[1])
                         })
 
-                # Deduplicate: strictly ONE box per hen head
+                # Deduplicate: strictly ONE box per hen head (eliminates duplicate boxes on pink dye or neck)
                 raw_dets.sort(key=lambda d: d["conf"], reverse=True)
                 kept_dets = []
                 for d in raw_dets:
@@ -210,7 +227,7 @@ class OpticalHenTracker:
                     for ex in kept_dets:
                         c2 = ex["center"]
                         diag2 = ex["diag"]
-                        if math.hypot(c1[0] - c2[0], c1[1] - c2[1]) < 16.0:
+                        if math.hypot(c1[0] - c2[0], c1[1] - c2[1]) < 36.0 * scale_factor:
                             overlap = True
                             break
                     if not overlap:
@@ -323,6 +340,8 @@ class OpticalHenTracker:
                         # Sort bottom-to-top ("killa irunthu mela") so Hen #1 is at the bottom
                         init_candidates.sort(key=lambda d: -d["center"][1] * 2.0 + d["center"][0])
                         for d in init_candidates:
+                            if any(math.hypot(d["center"][0] - h["center"][0], d["center"][1] - h["center"][1]) < 45.0 * scale_factor for h in self.hens.values()):
+                                continue
                             # Assign strictly new permanent number (never reuse, never repeat)
                             hid = self.next_hen_number
                             self.next_hen_number += 1

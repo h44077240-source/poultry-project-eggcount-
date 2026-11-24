@@ -361,6 +361,9 @@ def _sync_generate_frames(video_source, ref_settings=None):
                 (((r_ch - np.maximum(g_ch, b_ch)) > 10) & (s_ch > 24) & (v_ch > 35))
             )
 
+            gray_f = cv2.cvtColor(f_img, cv2.COLOR_BGR2GRAY)
+            sobel_f = np.abs(cv2.Sobel(gray_f, cv2.CV_64F, 1, 0, ksize=3))
+
             candidates = []
             for b, conf in zip(bx_list, cf_list):
                 bx1, by1, bw, bh = float(b[0]), float(b[1]), float(b[2]), float(b[3])
@@ -383,6 +386,20 @@ def _sync_generate_frames(video_source, ref_settings=None):
                     continue
                 if conf < 0.28 and comb_px < 8:
                     continue
+
+                # 1. Reject open-aisle equipment & sacks on floor (far right + no metal cage mesh wires)
+                norm_x = (bx1 + bw / 2.0) / float(in_w)
+                sx1, sy1 = max(0, int(bx1 - 25)), max(0, int(by1 - 25))
+                sx2, sy2 = min(in_w - 1, int(bx1 + bw + 25)), min(in_h - 1, int(by1 + bh + 25))
+                surround_wire_energy = np.mean(sobel_f[sy1:sy2, sx1:sx2])
+                if norm_x > 0.65 and surround_wire_energy < 22.0:
+                    continue  # Inanimate equipment/sacks/basin in walkway outside cages
+
+                # 2. Reject flat feed trough stains / trough rail
+                aspect = bw / float(bh)
+                norm_y = (by1 + bh / 2.0) / float(in_h)
+                if norm_y > 0.88 and aspect > 1.9:
+                    continue  # Horizontal metal trough lip / spilled feed
 
                 if has_red:
                     ys, xs = np.where(crop)
@@ -412,7 +429,8 @@ def _sync_generate_frames(video_source, ref_settings=None):
             candidates.sort(key=lambda d: d["conf"], reverse=True)
             dedup = []
             for d in candidates:
-                if not any(math.hypot(d["center"][0] - ex["center"][0], d["center"][1] - ex["center"][1]) < 16.0 for ex in dedup):
+                # 36.0px deduplication horizon: strictly ONE box per hen, eliminating duplicate boxes from pink dye marks or wattles
+                if not any(math.hypot(d["center"][0] - ex["center"][0], d["center"][1] - ex["center"][1]) < 36.0 for ex in dedup):
                     dedup.append(d)
             return dedup
         except Exception:
@@ -444,6 +462,8 @@ def _sync_generate_frames(video_source, ref_settings=None):
         else:
             init_in_zone.sort(key=lambda d: (d["center"][1] // 40, d["center"][0]))
         for d in init_in_zone:
+            if any(math.hypot(d["center"][0] - h["center"][0], d["center"][1] - h["center"][1]) < 45.0 for h in hens.values()):
+                continue
             hid = next_id
             next_id += 1
             hens[hid] = {
