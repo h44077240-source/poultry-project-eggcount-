@@ -109,38 +109,36 @@ class OpenCVVerifier(BaseVerifier):
         llm_confidence = llm_result.get("confidence", 0.0)
         llm_reason = llm_result.get("reason", "")
         
-        # Step 4.5: OpenCV FFT Moire Analysis
+        # Step 4.5: Advanced Multi-Layer Screen Recapture Analysis
         from app.ai.moire_analysis import perform_moire_analysis
         moire_result = perform_moire_analysis(image_bytes)
         moire_is_screen = moire_result.get("is_screen", False)
         moire_score = moire_result.get("moire_score", 0.0)
+        moire_device = moire_result.get("device_type", "digital screen")
+        moire_reason = moire_result.get("reason", "")
 
         # Step 5: Aggregate scores (kept for backwards compatibility of metadata)
         combined_score = (ela_score * 0.5) + (noise_score * 0.5)
 
         # A photo is SUSPICIOUS if it is a Screen Recapture or has strong tampering
         llm_ran_ok = (llm_confidence > 0.0) and not llm_result.get("error", False)
-        if llm_ran_ok:
-            # Use intelligent multimodal vision verdict
-            is_screen = llm_is_screen
-        else:
-            # Fallback only when cloud AI is completely unreachable
-            is_screen = moire_is_screen
+        is_screen = moire_is_screen or (llm_ran_ok and llm_is_screen)
 
         # Digital tampering requires substantial compression level anomalies (ELA)
-        is_tampered = (ela_score > 0.70) or (ela_score > 0.50 and noise_score > 0.95)
+        is_tampered = (ela_score > 0.85) or (ela_score > 0.65 and noise_score > 0.96)
 
         if is_screen:
             status = "SUSPICIOUS"
-            dev_label = llm_result.get("device_type", "digital screen")
-            dev_text = f" ({dev_label} display)" if dev_label and dev_label != "none" else " (laptop, mobile, or tablet screen)"
+            dev_label = moire_device if moire_is_screen and moire_device != "none" else llm_result.get("device_type", "laptop / mobile / TV screen")
+            dev_text = f" ({dev_label})" if dev_label and dev_label != "none" else " (laptop, mobile, tablet, or TV screen)"
+            active_reason = moire_reason if moire_is_screen else (llm_reason if llm_is_screen else 'Electronic screen display artifacts detected.')
             message = (
                 f"Screen Recapture Detected{dev_text}! "
-                f"The AI determined this is a photo taken of a digital screen rather than a physical live scene. "
-                f"{llm_reason if llm_is_screen else 'High-frequency display pixel grid (Moiré pattern) detected.'}"
+                f"The AI determined this is a photo taken of an electronic digital screen (laptop, mobile, tablet, or TV display) rather than a physical live scene. "
+                f"{active_reason}"
             )
-            confidence = max(0.9, llm_confidence, moire_score)
-            tamper_probability = max(0.85, moire_score)
+            confidence = max(0.95, llm_confidence, moire_result.get("confidence", 0.95))
+            tamper_probability = max(0.88, moire_score)
         elif is_tampered:
             status = "SUSPICIOUS"
             message = (
@@ -152,8 +150,8 @@ class OpenCVVerifier(BaseVerifier):
         else:
             status = "VERIFIED"
             message = (
-                "AI-assisted verification: Original Live Photo Verified. "
-                "No screen recapture (Moiré patterns) or digital manipulation indicators detected."
+                "Original Live Photo Verified. "
+                "Real-world physical scene confirmed with authentic sensor noise and no digital screen recapture."
             )
             confidence = 0.95
             tamper_probability = combined_score
