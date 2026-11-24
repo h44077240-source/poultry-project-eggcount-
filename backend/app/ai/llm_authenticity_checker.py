@@ -31,24 +31,24 @@ Return strict JSON only:
 import time
 
 CANDIDATE_MODELS = [
-    "gemini-flash-lite-latest",
-    "gemini-3.1-flash-lite",
-    "gemini-3.5-flash-lite",
-    "gemini-flash-latest",
+    "gemini-1.5-flash",
+    "gemini-2.0-flash",
 ]
 
 def check_image_authenticity(image_bytes: bytes) -> Dict[str, Any]:
     """
     Fast screen recapture check (detects laptop, mobile, and tablet screens).
     Uses downscaled thumbnail for sub-second execution.
-    Tries fast candidate Gemini models with fallback to local OpenCV analysis.
+    Tries Gemini models if a valid key is provided, else falls back instantly to local OpenCV analysis.
     """
     try:
         from app.config import settings
-        import google.generativeai as genai
 
-        if not settings.GEMINI_API_KEY or len(settings.GEMINI_API_KEY.strip()) < 10:
-            return {"is_screen_recapture": False, "device_type": "none", "confidence": 0.0, "reason": "No Gemini API key, using local OpenCV", "error": False}
+        # Fast exit if no valid Google AI Studio key (starts with AIzaSy)
+        if not settings.GEMINI_API_KEY or not settings.GEMINI_API_KEY.startswith("AIzaSy"):
+            return {"is_screen_recapture": False, "device_type": "none", "confidence": 0.0, "reason": "No valid Gemini API key, using local OpenCV", "error": False}
+
+        import google.generativeai as genai
 
         # Downscale image to max 512px to guarantee ultra-fast upload (<100ms)
         img = Image.open(io.BytesIO(image_bytes))
