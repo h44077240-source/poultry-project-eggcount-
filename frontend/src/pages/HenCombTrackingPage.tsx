@@ -2114,147 +2114,273 @@ export default function HenCombTrackingPage() {
       )}
 
       {/* ─── Hen Count Session Records History Section ─── */}
-      <div style={{ marginTop: 36, width: '100%', maxWidth: 1200 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <History size={24} color="#10b981" />
-            <h3 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
-              Saved Hen Count History & Records
-            </h3>
+      <div
+        className="card"
+        style={{
+          marginTop: 36,
+          width: '100%',
+          maxWidth: 1200,
+          padding: 0,
+          overflow: 'hidden',
+          borderRadius: 16,
+          border: '1px solid #e2e8f0',
+          background: '#ffffff',
+          boxShadow: '0 4px 20px -2px rgba(0, 0, 0, 0.05)'
+        }}
+      >
+        {/* Card Header */}
+        <div
+          style={{
+            padding: '20px 24px',
+            borderBottom: '1px solid #e2e8f0',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: 14,
+            background: 'linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div
+              style={{
+                width: 42,
+                height: 42,
+                borderRadius: 12,
+                background: 'linear-gradient(135deg, rgba(16,185,129,0.15), rgba(5,150,105,0.25))',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 2px 8px rgba(16,185,129,0.15)'
+              }}
+            >
+              <History size={22} color="#059669" />
+            </div>
+            <div>
+              <h3 style={{ fontSize: '1.2rem', fontWeight: 700, margin: 0, color: '#0f172a' }}>
+                Saved Hen Count History & Records
+              </h3>
+              <p style={{ fontSize: '0.84rem', color: '#64748b', margin: '3px 0 0 0' }}>
+                Verified session counts, video source details, and flock analytics
+              </p>
+            </div>
           </div>
-          <button
-            type="button"
-            onClick={fetchSavedSessions}
-            disabled={loadingSessions}
-            style={{
-              padding: '6px 14px',
-              borderRadius: 8,
-              background: 'rgba(255,255,255,0.06)',
-              border: '1px solid rgba(255,255,255,0.15)',
-              color: 'var(--text-secondary, #94a3b8)',
-              fontSize: '0.82rem',
-              fontWeight: 600,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6
-            }}
-          >
-            <RefreshCw size={14} className={loadingSessions ? 'animate-spin' : ''} /> Refresh History
-          </button>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {savedSessions.length > 0 && (
+              <span
+                style={{
+                  padding: '5px 12px',
+                  borderRadius: 20,
+                  background: '#f1f5f9',
+                  color: '#475569',
+                  fontSize: '0.8rem',
+                  fontWeight: 600,
+                  border: '1px solid #e2e8f0'
+                }}
+              >
+                {savedSessions.length} {savedSessions.length === 1 ? 'Session' : 'Sessions'} Recorded
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={fetchSavedSessions}
+              disabled={loadingSessions}
+              style={{
+                padding: '7px 16px',
+                borderRadius: 10,
+                background: '#ffffff',
+                border: '1px solid #cbd5e1',
+                color: '#334155',
+                fontSize: '0.84rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 7,
+                boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+                transition: 'all 0.2s'
+              }}
+            >
+              <RefreshCw size={14} className={loadingSessions ? 'animate-spin' : ''} /> Refresh History
+            </button>
+          </div>
         </div>
 
         {savedSessions.length === 0 ? (
           <div
             style={{
-              padding: '36px 20px',
+              padding: '50px 24px',
               textAlign: 'center',
-              background: 'rgba(255,255,255,0.02)',
-              border: '1px dashed rgba(255,255,255,0.15)',
-              borderRadius: 16,
-              color: 'var(--text-muted, #64748b)'
+              background: '#f8fafc'
             }}
           >
-            <Film size={36} style={{ marginBottom: 10, opacity: 0.5 }} />
-            <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>No Hen Count Sessions Saved Yet</div>
-            <div style={{ fontSize: '0.82rem', marginTop: 4 }}>
-              Upload a video or run live camera detection and click "Save to History" to record the count, date, and duration.
+            <div
+              style={{
+                width: 56,
+                height: 56,
+                borderRadius: '50%',
+                background: '#f1f5f9',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: 12
+              }}
+            >
+              <Film size={28} color="#94a3b8" />
+            </div>
+            <div style={{ fontWeight: 700, fontSize: '1.05rem', color: '#1e293b' }}>
+              No Hen Count Sessions Saved Yet
+            </div>
+            <div style={{ fontSize: '0.85rem', color: '#64748b', marginTop: 4, maxWidth: 460, margin: '6px auto 0' }}>
+              Upload a video or stream from your phone camera and click "Save Count Record" to archive verified counts here.
             </div>
           </div>
         ) : (
-          <div
-            style={{
-              overflowX: 'auto',
-              background: 'rgba(15,23,42,0.4)',
-              border: '1px solid var(--border-subtle, rgba(255,255,255,0.1))',
-              borderRadius: 16
-            }}
-          >
+          <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.88rem' }}>
               <thead>
-                <tr style={{ background: 'rgba(255,255,255,0.04)', borderBottom: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-secondary, #94a3b8)' }}>
-                  <th style={{ padding: '14px 18px', fontWeight: 600 }}>Date & Time</th>
-                  <th style={{ padding: '14px 18px', fontWeight: 600 }}>Video Source</th>
-                  <th style={{ padding: '14px 18px', fontWeight: 600 }}>Duration</th>
-                  <th style={{ padding: '14px 18px', fontWeight: 600 }}>Total Hens</th>
-                  <th style={{ padding: '14px 18px', fontWeight: 600 }}>Visible Heads</th>
-                  <th style={{ padding: '14px 18px', fontWeight: 600 }}>Notes</th>
-                  <th style={{ padding: '14px 18px', fontWeight: 600, textAlign: 'center' }}>Action</th>
+                <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                  <th style={{ padding: '14px 20px', fontWeight: 700, color: '#475569', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    Date & Time
+                  </th>
+                  <th style={{ padding: '14px 20px', fontWeight: 700, color: '#475569', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    Video Source
+                  </th>
+                  <th style={{ padding: '14px 20px', fontWeight: 700, color: '#475569', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    Duration
+                  </th>
+                  <th style={{ padding: '14px 20px', fontWeight: 700, color: '#475569', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    Total Hens
+                  </th>
+                  <th style={{ padding: '14px 20px', fontWeight: 700, color: '#475569', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    Visible Heads
+                  </th>
+                  <th style={{ padding: '14px 20px', fontWeight: 700, color: '#475569', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    Notes
+                  </th>
+                  <th style={{ padding: '14px 20px', fontWeight: 700, color: '#475569', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'center' }}>
+                    Action
+                  </th>
                 </tr>
               </thead>
               <tbody>
-                {savedSessions.map((session) => (
+                {savedSessions.map((session, idx) => (
                   <tr
                     key={session.id}
+                    className="history-row"
                     style={{
-                      borderBottom: '1px solid rgba(255,255,255,0.05)',
-                      transition: 'background 0.2s'
+                      borderBottom: idx === savedSessions.length - 1 ? 'none' : '1px solid #f1f5f9',
+                      background: '#ffffff',
+                      transition: 'background 0.15s'
                     }}
                   >
-                    <td style={{ padding: '14px 18px', whiteSpace: 'nowrap' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, color: 'var(--text-primary)' }}>
-                        <Calendar size={14} color="#10b981" />
-                        {new Date(session.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                    <td style={{ padding: '16px 20px', whiteSpace: 'nowrap' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, color: '#0f172a' }}>
+                        <Calendar size={15} color="#059669" />
+                        <span>{new Date(session.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span>
                       </div>
-                      <div style={{ fontSize: '0.78rem', color: '#94a3b8', marginLeft: 20 }}>
+                      <div style={{ fontSize: '0.78rem', color: '#64748b', marginLeft: 23, marginTop: 2 }}>
                         {new Date(session.created_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                       </div>
                     </td>
-                    <td style={{ padding: '14px 18px' }}>
+
+                    <td style={{ padding: '16px 20px' }}>
                       <span
                         style={{
-                          fontSize: '0.75rem',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 5,
+                          fontSize: '0.76rem',
                           fontWeight: 700,
-                          padding: '3px 8px',
-                          borderRadius: 6,
-                          background: session.source_type === 'LIVE_CAMERA' ? 'rgba(239,68,68,0.15)' : 'rgba(59,130,246,0.15)',
-                          color: session.source_type === 'LIVE_CAMERA' ? '#ef4444' : '#60a5fa',
-                          border: `1px solid ${session.source_type === 'LIVE_CAMERA' ? 'rgba(239,68,68,0.3)' : 'rgba(59,130,246,0.3)'}`
+                          padding: '4px 10px',
+                          borderRadius: 20,
+                          background: session.source_type === 'LIVE_CAMERA' ? '#fef2f2' : (session.source_type === 'DEMO_VIDEO' ? '#faf5ff' : '#eff6ff'),
+                          color: session.source_type === 'LIVE_CAMERA' ? '#dc2626' : (session.source_type === 'DEMO_VIDEO' ? '#7c3aed' : '#2563eb'),
+                          border: `1px solid ${session.source_type === 'LIVE_CAMERA' ? '#fecaca' : (session.source_type === 'DEMO_VIDEO' ? '#e9d5ff' : '#bfdbfe')}`
                         }}
                       >
-                        {session.source_type === 'LIVE_CAMERA' ? '📷 LIVE CAMERA' : (session.source_type === 'DEMO_VIDEO' ? '🎬 DEMO VIDEO' : '☁️ UPLOADED VIDEO')}
+                        {session.source_type === 'LIVE_CAMERA' ? '🔴 Live Stream' : (session.source_type === 'DEMO_VIDEO' ? '🎬 Demo Video' : '☁️ Uploaded Video')}
                       </span>
                       {session.video_filename && (
-                        <div style={{ fontSize: '0.78rem', color: '#cbd5e1', marginTop: 4, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <div
+                          title={session.video_filename}
+                          style={{
+                            fontSize: '0.78rem',
+                            color: '#475569',
+                            marginTop: 5,
+                            maxWidth: 240,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            fontFamily: 'monospace',
+                            fontWeight: 500
+                          }}
+                        >
                           {session.video_filename}
                         </div>
                       )}
                     </td>
-                    <td style={{ padding: '14px 18px', whiteSpace: 'nowrap', color: '#f1f5f9' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <Clock size={14} color="#f59e0b" />
-                        {session.video_duration > 0 ? `${session.video_duration.toFixed(1)}s` : 'Live / Continuous'}
+
+                    <td style={{ padding: '16px 20px', whiteSpace: 'nowrap' }}>
+                      <div
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          padding: '4px 10px',
+                          borderRadius: 8,
+                          background: '#fffbeb',
+                          border: '1px solid #fef3c7',
+                          color: '#92400e',
+                          fontSize: '0.82rem',
+                          fontWeight: 600
+                        }}
+                      >
+                        <Clock size={14} color="#d97706" />
+                        <span>{session.video_duration > 0 ? `${session.video_duration.toFixed(1)}s` : 'Continuous Feed'}</span>
                       </div>
                     </td>
-                    <td style={{ padding: '14px 18px' }}>
-                      <span style={{ fontSize: '1.25rem', fontWeight: 800, color: '#10b981' }}>
-                        {session.total_count}
-                      </span>
-                      <span style={{ fontSize: '0.75rem', color: '#94a3b8', marginLeft: 4 }}>hens</span>
+
+                    <td style={{ padding: '16px 20px' }}>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
+                        <span style={{ fontSize: '1.4rem', fontWeight: 800, color: '#059669', letterSpacing: '-0.02em' }}>
+                          {session.total_count}
+                        </span>
+                        <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#64748b' }}>hens</span>
+                      </div>
                     </td>
-                    <td style={{ padding: '14px 18px' }}>
-                      <span style={{ fontSize: '1.1rem', fontWeight: 700, color: '#3b82f6' }}>
-                        {session.visible_count}
-                      </span>
+
+                    <td style={{ padding: '16px 20px' }}>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
+                        <span style={{ fontSize: '1.2rem', fontWeight: 700, color: '#2563eb' }}>
+                          {session.visible_count}
+                        </span>
+                        <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>in frame</span>
+                      </div>
                     </td>
-                    <td style={{ padding: '14px 18px', color: '#cbd5e1', fontSize: '0.82rem', maxWidth: 180 }}>
-                      {session.notes || '—'}
+
+                    <td style={{ padding: '16px 20px', color: '#475569', fontSize: '0.84rem', maxWidth: 180 }}>
+                      {session.notes || <span style={{ color: '#cbd5e1' }}>—</span>}
                     </td>
-                    <td style={{ padding: '14px 18px', textAlign: 'center' }}>
+
+                    <td style={{ padding: '16px 20px', textAlign: 'center' }}>
                       <button
                         type="button"
                         onClick={() => deleteSessionRecord(session.id)}
-                        title="Delete record"
+                        title="Delete Session Record"
+                        className="btn-delete-record"
                         style={{
-                          background: 'rgba(239,68,68,0.1)',
-                          border: '1px solid rgba(239,68,68,0.3)',
+                          background: '#fef2f2',
+                          border: '1px solid #fecaca',
                           color: '#ef4444',
-                          padding: '6px 10px',
+                          padding: '7px 11px',
                           borderRadius: 8,
                           cursor: 'pointer',
                           display: 'inline-flex',
                           alignItems: 'center',
-                          justifyContent: 'center'
+                          justifyContent: 'center',
+                          transition: 'all 0.15s'
                         }}
                       >
                         <Trash2 size={15} />
@@ -2268,10 +2394,11 @@ export default function HenCombTrackingPage() {
         )}
       </div>
 
-
       <style>{`
         @keyframes live-pulse { 0%,100% { opacity:1; box-shadow: 0 0 8px #ef4444; } 50% { opacity:0.5; box-shadow: 0 0 18px #ef4444; } }
         .ref-mode-btn:hover { transform: translateY(-4px); box-shadow: 0 12px 30px rgba(0,0,0,0.3) !important; }
+        .history-row:hover { background: #f8fafc !important; }
+        .btn-delete-record:hover { background: #fee2e2 !important; border-color: #ef4444 !important; transform: scale(1.08); }
         .animate-spin { animation: spin 1s linear infinite; }
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
       `}</style>
