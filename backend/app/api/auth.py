@@ -109,7 +109,14 @@ async def login(
                 needs_upgrade = True
                 new_hash = hash_password(raw_pass)
 
-    # 3. Security Rule: If account is locked OR password is invalid:
+    # 3. Security Rule: If credentials are valid, clear lockout and proceed!
+    if user and valid_password:
+        is_locked = False
+        await auth_security.handle_successful_login(user.email)
+        if user.username:
+            await auth_security.handle_successful_login(user.username)
+
+    # If account is locked OR password is invalid:
     # NEVER reveal whether the failure was due to lockout or wrong password.
     # Always return standard generic 401 "Invalid email or password"
     if is_locked or not user or not valid_password:

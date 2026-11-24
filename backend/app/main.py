@@ -132,9 +132,9 @@ async def startup_event():
     except Exception as e:
         print(f"[WARNING] Blockchain init warning: {e}")
 
-    # Preload shared AI model locally (on Render, defer to on-demand to keep container startup under 1s and avoid 502 Bad Gateway)
-    if os.environ.get("RENDER") == "true":
-        print("[START] Render container active: YOLO model will load on-demand (<1s startup).")
+    # Preload shared AI model locally (on cloud containers like Railway/Render, defer to on-demand to keep container startup under 1s and avoid timeouts)
+    if os.environ.get("RENDER") == "true" or os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("RAILWAY_SERVICE_NAME") or os.environ.get("PORT"):
+        print("[START] Cloud container active: YOLO model will load on-demand (<1s startup).")
     else:
         try:
             from app.ai.shared_model import get_shared_model
