@@ -513,6 +513,14 @@ def get_count_sessions(limit: int = 50, db: Session = Depends(get_db)):
     return sessions
 
 
+@router.delete("/sessions")
+def clear_all_count_sessions(db: Session = Depends(get_db)):
+    """Clear all historical hen count sessions."""
+    db.query(HenCountSession).delete()
+    db.commit()
+    return {"success": True, "message": "All records cleared successfully"}
+
+
 @router.delete("/sessions/{session_id}")
 def delete_count_session(session_id: str, db: Session = Depends(get_db)):
     """Delete a specific hen count record by ID."""

@@ -236,6 +236,20 @@ export default function HenCombTrackingPage() {
     }
   }
 
+  const clearAllSessions = async () => {
+    if (!window.confirm('Are you sure you want to delete all saved hen count session records? This will clear all historical records.')) return
+    try {
+      const resp = await fetch(`${getTrackerBaseUrl()}/sessions`, {
+        method: 'DELETE'
+      })
+      if (resp.ok) {
+        setSavedSessions([])
+      }
+    } catch (e) {
+      console.warn('Failed to clear sessions:', e)
+    }
+  }
+
   // Poll for total count when streaming server video
   // Real-time polling (350ms) for live detection & total hen counts (smooth without socket contention)
   useEffect(() => {
@@ -2371,19 +2385,43 @@ export default function HenCombTrackingPage() {
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             {savedSessions.length > 0 && (
-              <span
-                style={{
-                  padding: '5px 12px',
-                  borderRadius: 20,
-                  background: '#f1f5f9',
-                  color: '#475569',
-                  fontSize: '0.8rem',
-                  fontWeight: 600,
-                  border: '1px solid #e2e8f0'
-                }}
-              >
-                {savedSessions.length} {savedSessions.length === 1 ? 'Session' : 'Sessions'} Recorded
-              </span>
+              <>
+                <span
+                  style={{
+                    padding: '5px 12px',
+                    borderRadius: 20,
+                    background: '#f1f5f9',
+                    color: '#475569',
+                    fontSize: '0.8rem',
+                    fontWeight: 600,
+                    border: '1px solid #e2e8f0'
+                  }}
+                >
+                  {savedSessions.length} {savedSessions.length === 1 ? 'Session' : 'Sessions'} Recorded
+                </span>
+                <button
+                  type="button"
+                  onClick={clearAllSessions}
+                  title="Clear all saved history records"
+                  style={{
+                    padding: '7px 14px',
+                    borderRadius: 10,
+                    background: '#fef2f2',
+                    border: '1px solid #fecaca',
+                    color: '#dc2626',
+                    fontSize: '0.84rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <Trash2 size={14} /> Clear All Records
+                </button>
+              </>
             )}
             <button
               type="button"
@@ -2486,29 +2524,29 @@ export default function HenCombTrackingPage() {
             </div>
           </div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
+          <div style={{ overflowX: 'auto', background: '#ffffff' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.88rem' }}>
               <thead>
-                <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                  <th style={{ padding: '14px 20px', fontWeight: 700, color: '#475569', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
+                  <th style={{ padding: '14px 20px', fontWeight: 800, color: '#1e293b', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                     Date & Time
                   </th>
-                  <th style={{ padding: '14px 20px', fontWeight: 700, color: '#475569', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  <th style={{ padding: '14px 20px', fontWeight: 800, color: '#1e293b', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                     Video Source
                   </th>
-                  <th style={{ padding: '14px 20px', fontWeight: 700, color: '#475569', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  <th style={{ padding: '14px 20px', fontWeight: 800, color: '#1e293b', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                     Duration
                   </th>
-                  <th style={{ padding: '14px 20px', fontWeight: 700, color: '#475569', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  <th style={{ padding: '14px 20px', fontWeight: 800, color: '#1e293b', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                     Total Hens
                   </th>
-                  <th style={{ padding: '14px 20px', fontWeight: 700, color: '#475569', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  <th style={{ padding: '14px 20px', fontWeight: 800, color: '#1e293b', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                     Visible Heads
                   </th>
-                  <th style={{ padding: '14px 20px', fontWeight: 700, color: '#475569', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  <th style={{ padding: '14px 20px', fontWeight: 800, color: '#1e293b', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                     Notes
                   </th>
-                  <th style={{ padding: '14px 20px', fontWeight: 700, color: '#475569', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'center' }}>
+                  <th style={{ padding: '14px 20px', fontWeight: 800, color: '#1e293b', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'center' }}>
                     Action
                   </th>
                 </tr>
@@ -2539,14 +2577,14 @@ export default function HenCombTrackingPage() {
                         style={{
                           display: 'inline-flex',
                           alignItems: 'center',
-                          gap: 5,
-                          fontSize: '0.76rem',
+                          gap: 6,
+                          fontSize: '0.78rem',
                           fontWeight: 700,
-                          padding: '4px 10px',
+                          padding: '4px 12px',
                           borderRadius: 20,
-                          background: session.source_type === 'LIVE_CAMERA' ? '#fef2f2' : (session.source_type === 'DEMO_VIDEO' ? '#faf5ff' : '#eff6ff'),
-                          color: session.source_type === 'LIVE_CAMERA' ? '#dc2626' : (session.source_type === 'DEMO_VIDEO' ? '#7c3aed' : '#2563eb'),
-                          border: `1px solid ${session.source_type === 'LIVE_CAMERA' ? '#fecaca' : (session.source_type === 'DEMO_VIDEO' ? '#e9d5ff' : '#bfdbfe')}`
+                          background: session.source_type === 'LIVE_CAMERA' ? '#fee2e2' : (session.source_type === 'DEMO_VIDEO' ? '#f3e8ff' : '#e0f2fe'),
+                          color: session.source_type === 'LIVE_CAMERA' ? '#991b1b' : (session.source_type === 'DEMO_VIDEO' ? '#6b21a8' : '#0369a1'),
+                          border: `1px solid ${session.source_type === 'LIVE_CAMERA' ? '#fca5a5' : (session.source_type === 'DEMO_VIDEO' ? '#d8b4fe' : '#7dd3fc')}`
                         }}
                       >
                         {session.source_type === 'LIVE_CAMERA' ? '🔴 Live Stream' : (session.source_type === 'DEMO_VIDEO' ? '🎬 Demo Video' : '☁️ Uploaded Video')}
@@ -2555,15 +2593,15 @@ export default function HenCombTrackingPage() {
                         <div
                           title={session.video_filename}
                           style={{
-                            fontSize: '0.78rem',
-                            color: '#475569',
-                            marginTop: 5,
+                            fontSize: '0.8rem',
+                            color: '#334155',
+                            marginTop: 6,
                             maxWidth: 240,
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
                             whiteSpace: 'nowrap',
                             fontFamily: 'monospace',
-                            fontWeight: 500
+                            fontWeight: 600
                           }}
                         >
                           {session.video_filename}
@@ -2579,37 +2617,37 @@ export default function HenCombTrackingPage() {
                           gap: 6,
                           padding: '4px 10px',
                           borderRadius: 8,
-                          background: '#fffbeb',
-                          border: '1px solid #fef3c7',
-                          color: '#92400e',
+                          background: '#fef3c7',
+                          border: '1px solid #fde68a',
+                          color: '#78350f',
                           fontSize: '0.82rem',
-                          fontWeight: 600
+                          fontWeight: 700
                         }}
                       >
-                        <Clock size={14} color="#d97706" />
+                        <Clock size={14} color="#b45309" />
                         <span>{session.video_duration > 0 ? `${session.video_duration.toFixed(1)}s` : 'Continuous Feed'}</span>
                       </div>
                     </td>
 
                     <td style={{ padding: '16px 20px' }}>
-                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
-                        <span style={{ fontSize: '1.4rem', fontWeight: 800, color: '#059669', letterSpacing: '-0.02em' }}>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+                        <span style={{ fontSize: '1.45rem', fontWeight: 800, color: '#047857', letterSpacing: '-0.02em', lineHeight: 1 }}>
                           {session.total_count}
                         </span>
-                        <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#64748b' }}>hens</span>
+                        <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#065f46' }}>hens</span>
                       </div>
                     </td>
 
                     <td style={{ padding: '16px 20px' }}>
-                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
-                        <span style={{ fontSize: '1.2rem', fontWeight: 700, color: '#2563eb' }}>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+                        <span style={{ fontSize: '1.25rem', fontWeight: 800, color: '#1d4ed8', lineHeight: 1 }}>
                           {session.visible_count}
                         </span>
-                        <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>in frame</span>
+                        <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#1e40af' }}>in frame</span>
                       </div>
                     </td>
 
-                    <td style={{ padding: '16px 20px', color: '#475569', fontSize: '0.84rem', maxWidth: 180 }}>
+                    <td style={{ padding: '16px 20px', color: '#334155', fontSize: '0.85rem', maxWidth: 180, fontWeight: 500 }}>
                       {session.notes || <span style={{ color: '#cbd5e1' }}>—</span>}
                     </td>
 

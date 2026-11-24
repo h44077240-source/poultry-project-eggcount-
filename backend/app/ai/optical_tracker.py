@@ -156,9 +156,10 @@ class OpticalHenTracker:
                         has_red = comb_px >= 8
 
                         # Strict False-Positive Filtering:
-                        if float(conf) < 0.28 and not has_red:
+                        # Combs are RED. Any detection lacking genuine red comb pixels (< 4) is non-comb noise (feathers, wire, floor)
+                        if comb_px < 4:
                             continue
-                        if comb_px < 3 and float(conf) < 0.35:
+                        if float(conf) < 0.28 and comb_px < 8:
                             continue
 
                         scale_factor = max(fw, fh) / 640.0
@@ -287,9 +288,9 @@ class OpticalHenTracker:
                             x2, y2 = max(0, min(fw - 1, x2)), max(0, min(fh - 1, y2))
                             crop_red = comb_red[y1:y2, x1:x2]
                             comb_px = np.count_nonzero(crop_red)
-                            if float(conf) < 0.28 and comb_px < 8:
+                            if comb_px < 4:
                                 continue
-                            if comb_px < 3 and float(conf) < 0.35:
+                            if float(conf) < 0.28 and comb_px < 8:
                                 continue
 
                             if comb_px >= 8:
@@ -437,7 +438,7 @@ class OpticalHenTracker:
                         pred_hy = hy + vy * min(hdata["lost"], 3)
                         dist = min(math.hypot(cx - hx, cy - hy), math.hypot(cx - pred_hx, cy - pred_hy))
                         iou = _box_iou(hdata["box"], det["box"])
-                        max_match = 50.0  # Stable radius to keep ID locked to hen
+                        max_match = 65.0  # Intra-cage slot horizon to match hen movement without duplicate IDs
                         if iou >= 0.15 or dist <= max_match:
                             cost = (1.0 - iou) * 0.4 + (dist / max_match) * 0.6
                             active_matches.append((cost, det_idx, hid))
@@ -475,7 +476,7 @@ class OpticalHenTracker:
                         hdata["lost"] += 1
 
                 # Stage 2: Register New Hen entering the zone (Multi-frame confirmation eliminates all spurious 1-frame noise)
-                min_new_dist = 38.0
+                min_new_dist = 60.0
                 unmatched_fresh = [det for det_idx, det in enumerate(fresh) if det_idx not in used_dets and det.get("conf", 0.0) >= 0.18]
                 unmatched_fresh.sort(key=lambda d: -d["center"][1])
                 updated_t = set()
@@ -488,7 +489,8 @@ class OpticalHenTracker:
 
                     # Only block if too close to ANY known tracked hen (prevents duplicate box on same comb / cage slot)
                     is_near_active = any(
-                        math.hypot(cx - h["center"][0], cy - h["center"][1]) < min_new_dist or _box_iou(det["box"], h["box"]) > 0.25
+                        min(math.hypot(cx - h["center"][0], cy - h["center"][1]),
+                            math.hypot(cx - h.get("home", h["center"])[0], cy - h.get("home", h["center"])[1])) < min_new_dist or _box_iou(det["box"], h["box"]) > 0.25
                         for h in self.hens.values()
                     )
                     if is_near_active:
@@ -496,7 +498,7 @@ class OpticalHenTracker:
 
                     # Match against tentative tracklets
                     matched_tid = None
-                    best_t_dist = 32.0
+                    best_t_dist = 40.0
                     for tid, tdata in self.tentative_hens.items():
                         dist = math.hypot(cx - tdata["center"][0], cy - tdata["center"][1])
                         if dist < best_t_dist:

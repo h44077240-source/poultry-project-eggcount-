@@ -298,9 +298,9 @@ def _sync_generate_frames(video_source, ref_settings=None):
     MAX_COMB_W = 180   # Maximum width for hen HEAD/COMB only (scaled for display)
     MAX_COMB_H = 180   # Maximum height for hen HEAD/COMB only (scaled for display)
     MIN_COMB_SZ = 8    # Minimum comb size (eliminates microscopic noise artifacts)
-    MATCH_RADIUS = 32.0  # Stable radius for tracking
-    NEW_HEN_MIN_DIST = 24.0  # Prevents head-bobbing / nodding of same hen from creating duplicate IDs
-    MAX_LOST_MEMORY = 45  # Frame memory for lost hens before retirement
+    MATCH_RADIUS = 65.0  # Intra-cage slot horizon to match hen movement without duplicate IDs
+    NEW_HEN_MIN_DIST = 60.0  # Nearest neighbor hen is >150px away; 60px prevents neck movements from duplicating
+    MAX_LOST_MEMORY = 600  # Frame memory for lost hens before retirement
 
     def extract_combs(f_img, conf_thresh=0.25, imgsz=None):
         if imgsz is None:
@@ -377,12 +377,11 @@ def _sync_generate_frames(video_source, ref_settings=None):
                 comb_px = np.count_nonzero(crop)
                 has_red = comb_px >= 8
 
-                # Clean False-Positive Filtering:
-                # Moderate conf (< 0.28) MUST have genuine red comb pixels to be considered
-                if conf < 0.28 and not has_red:
+                # Strict False-Positive Filtering:
+                # Combs are RED. Any detection lacking genuine red comb pixels (< 4) is non-comb noise (feathers, wire, floor)
+                if comb_px < 4:
                     continue
-                # If near-zero red pixels (< 3) and conf < 0.35, discard as noise/floor/cage speck
-                if comb_px < 3 and conf < 0.35:
+                if conf < 0.28 and comb_px < 8:
                     continue
 
                 if has_red:
@@ -618,8 +617,8 @@ def _sync_generate_frames(video_source, ref_settings=None):
                         homx, homy = h.get("home", (hx, hy))
                         dist = min(math.hypot(dcx - hx, dcy - hy), math.hypot(dcx - homx, dcy - homy))
                         iou = compute_iou(d["box"], h["box"])
-                        if dist <= 42.0 or iou > 0.12:
-                            cost = (1.0 - iou) * 0.4 + (dist / 42.0) * 0.6
+                        if dist <= 65.0 or iou > 0.12:
+                            cost = (1.0 - iou) * 0.4 + (dist / 65.0) * 0.6
                             cands.append((cost, d_idx, hid))
 
                 cands.sort(key=lambda x: x[0])
@@ -662,7 +661,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
                     # Persistent Memory Check: Never register a new hen if near ANY known hen slot ever recorded
                     is_near = any(
                         min(math.hypot(dcx - h["center"][0], dcy - h["center"][1]),
-                            math.hypot(dcx - h.get("home", h["center"])[0], dcy - h.get("home", h["center"])[1])) < 38.0
+                            math.hypot(dcx - h.get("home", h["center"])[0], dcy - h.get("home", h["center"])[1])) < 60.0
                         for h in hens.values()
                     )
                     if is_near:
@@ -670,7 +669,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
 
                     # Match against tentative tracklets
                     matched_tid = None
-                    best_t_dist = 32.0
+                    best_t_dist = 40.0
                     for tid, tdata in tentative_hens.items():
                         dist = math.hypot(dcx - tdata["center"][0], dcy - tdata["center"][1])
                         if dist < best_t_dist:

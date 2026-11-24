@@ -91,3 +91,26 @@ async def get_department_stats(
         .all()
     )
     return [{"name": r.name, "code": r.code, "evidence_count": r.count} for r in rows]
+
+
+@router.get("/daily-hen-summary")
+async def get_daily_hen_summary(db: Session = Depends(get_db)):
+    """Return daily total hen counts grouped by date."""
+    from app.database.models import HenCountSession
+    sessions = db.query(HenCountSession).order_by(HenCountSession.created_at.desc()).all()
+    day_map = {}
+    for s in sessions:
+        date_str = s.created_at.strftime("%Y-%m-%d")
+        formatted = s.created_at.strftime("%d %b %Y")
+        if date_str not in day_map:
+            day_map[date_str] = {
+                "date": date_str,
+                "formatted_date": formatted,
+                "total_hens": 0,
+                "sessions_count": 0,
+                "peak_visible": 0
+            }
+        day_map[date_str]["total_hens"] += (s.total_count or 0)
+        day_map[date_str]["sessions_count"] += 1
+        day_map[date_str]["peak_visible"] = max(day_map[date_str]["peak_visible"], s.visible_count or 0)
+    return list(day_map.values())

@@ -74,6 +74,7 @@ export const dashboardApi = {
   trend: (days = 30) => api.get(`/api/dashboard/evidence-trend?days=${days}`),
   statusDist: () => api.get('/api/dashboard/status-distribution'),
   deptStats: () => api.get('/api/dashboard/department-stats'),
+  dailyHenSummary: () => api.get('/api/dashboard/daily-hen-summary'),
 }
 
 // ─── Evidence ─────────────────────────────────────────────────────────────────

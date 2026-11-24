@@ -9,11 +9,19 @@ import {
 } from 'recharts'
 import {
   Image, CheckCircle, AlertTriangle, Clock, Users,
-  Smartphone, Blocks, TrendingUp, Shield, CheckSquare, Camera
+  Smartphone, Blocks, TrendingUp, Shield, CheckSquare, Camera,
+  Calendar, Layers, Activity
 } from 'lucide-react'
 
 interface TrendPoint { date: string; count: number }
 interface StatusDist  { status: string; count: number }
+interface DailyHenSummary {
+  date: string;
+  formatted_date: string;
+  total_hens: number;
+  sessions_count: number;
+  peak_visible: number;
+}
 
 const STATUS_COLORS: Record<string, string> = {
   VERIFIED: '#10b981',
@@ -28,6 +36,7 @@ export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [trend, setTrend] = useState<TrendPoint[]>([])
   const [statusDist, setStatusDist] = useState<StatusDist[]>([])
+  const [dailyHens, setDailyHens] = useState<DailyHenSummary[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -35,10 +44,12 @@ export default function DashboardPage() {
       dashboardApi.stats(),
       dashboardApi.trend(30),
       dashboardApi.statusDist(),
-    ]).then(([s, t, d]) => {
+      dashboardApi.dailyHenSummary().catch(() => ({ data: [] })),
+    ]).then(([s, t, d, h]) => {
       setStats(s.data)
       setTrend(t.data)
       setStatusDist(d.data)
+      setDailyHens(Array.isArray(h.data) ? h.data : [])
     }).catch(console.error)
       .finally(() => setLoading(false))
   }, [])
@@ -140,8 +151,45 @@ export default function DashboardPage() {
         <div className="card-header">
           <h3 className="card-title">Quick Actions</h3>
         </div>
-        <div style={{ padding: '24px', display: 'flex', gap: '16px' }}>
-          <Link to="/egg-counter" style={{ textDecoration: 'none', flex: 1 }}>
+        <div style={{ padding: '24px', display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+          <Link to="/hen-comb-tracking" style={{ textDecoration: 'none', flex: '1 1 300px' }}>
+            <div style={{ 
+              background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(16, 185, 129, 0.05) 100%)',
+              border: '1px solid rgba(16, 185, 129, 0.2)',
+              borderRadius: '12px',
+              padding: '24px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '20px',
+              transition: 'all 0.2s ease',
+              cursor: 'pointer'
+            }}
+            onMouseOver={(e) => {
+              e.currentTarget.style.transform = 'translateY(-2px)'
+              e.currentTarget.style.boxShadow = '0 8px 24px rgba(16, 185, 129, 0.15)'
+            }}
+            onMouseOut={(e) => {
+              e.currentTarget.style.transform = 'translateY(0)'
+              e.currentTarget.style.boxShadow = 'none'
+            }}
+            >
+              <div style={{ 
+                width: '64px', height: '64px', borderRadius: '16px', background: '#059669', 
+                display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 12px rgba(16, 185, 129, 0.4)'
+              }}>
+                <Activity color="white" size={32} />
+              </div>
+              <div>
+                <h3 style={{ fontSize: '1.25rem', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '4px' }}>Hen Counting AI Tracker</h3>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem' }}>Automated hen head/comb tracking and flock counting with live/video stream.</p>
+              </div>
+              <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px', color: '#059669', fontWeight: '600', fontSize: '0.9rem' }}>
+                <Camera size={18} /> Open Tracker
+              </div>
+            </div>
+          </Link>
+
+          <Link to="/egg-counter" style={{ textDecoration: 'none', flex: '1 1 300px' }}>
             <div style={{ 
               background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(99, 102, 241, 0.05) 100%)',
               border: '1px solid rgba(99, 102, 241, 0.2)',
@@ -178,6 +226,88 @@ export default function DashboardPage() {
             </div>
           </Link>
         </div>
+      </div>
+
+      {/* ─── Daily Hen Count (Date-Wise Poultry Summary) ─── */}
+      <div className="card" style={{ marginTop: '24px' }}>
+        <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(16,185,129,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Calendar size={20} color="#059669" />
+            </div>
+            <div>
+              <h3 className="card-title" style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
+                Daily Hen Count Summary (Date-Wise)
+              </h3>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0 }}>
+                Total verified hens counted per calendar day across recorded flock sessions
+              </p>
+            </div>
+          </div>
+          <Link
+            to="/hen-comb-tracking"
+            style={{
+              padding: '6px 14px',
+              borderRadius: 8,
+              background: '#059669',
+              color: '#ffffff',
+              fontSize: '0.82rem',
+              fontWeight: 600,
+              textDecoration: 'none',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6
+            }}
+          >
+            <Activity size={14} /> Open Hen Counting
+          </Link>
+        </div>
+
+        {dailyHens.length === 0 ? (
+          <div style={{ padding: '30px 20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+            No hen counting sessions saved yet. Run Hen Counting to log verified flock counts.
+          </div>
+        ) : (
+          <div style={{ padding: '20px 24px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
+            {dailyHens.map((day) => {
+              const isToday = day.date === new Date().toISOString().slice(0, 10);
+              return (
+                <div
+                  key={day.date}
+                  style={{
+                    background: isToday ? 'linear-gradient(135deg, #ffffff 0%, #ecfdf5 100%)' : 'var(--bg-elevated)',
+                    border: isToday ? '2px solid #10b981' : '1px solid rgba(0,0,0,0.08)',
+                    borderRadius: 12,
+                    padding: '16px',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+                    position: 'relative'
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                      {day.formatted_date}
+                    </div>
+                    {isToday && (
+                      <span style={{ fontSize: '0.68rem', fontWeight: 700, background: '#10b981', color: '#ffffff', padding: '2px 7px', borderRadius: 6 }}>
+                        TODAY
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 10 }}>
+                    <span style={{ fontSize: '1.8rem', fontWeight: 800, color: '#059669', lineHeight: 1 }}>
+                      {day.total_hens}
+                    </span>
+                    <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-muted)' }}>total hens</span>
+                  </div>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 8, display: 'flex', justifyContent: 'space-between' }}>
+                    <span>{day.sessions_count} {day.sessions_count === 1 ? 'session' : 'sessions'}</span>
+                    <span>Peak {day.peak_visible} in frame</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Quick status overview */}
