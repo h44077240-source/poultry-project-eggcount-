@@ -31,8 +31,18 @@ def perform_moire_analysis(image_bytes: bytes) -> Dict[str, Any]:
                 "error": "Invalid image"
             }
 
-        h, w = img.shape[:2]
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        orig_h, orig_w = img.shape[:2]
+        
+        # Crop out bottom GeoTag watermark banner if present so stamped computer graphic does not corrupt scene forensics
+        bottom_h = int(orig_h * 0.18)
+        bottom_crop = img[orig_h - bottom_h:, :]
+        if orig_h > 400 and (np.mean(bottom_crop) < 70 or np.std(bottom_crop[:, :int(orig_w * 0.4)]) < 30):
+            analysis_img = img[:orig_h - bottom_h, :]
+        else:
+            analysis_img = img
+
+        h, w = analysis_img.shape[:2]
+        gray = cv2.cvtColor(analysis_img, cv2.COLOR_BGR2GRAY)
 
         # ─── 1. Flat Uniform Block Ratio (Computer UI vs Camera Photon Noise)
         # Real camera sensors always have Poisson/Gaussian photon noise (std > 1.3 even on plain walls).
@@ -132,31 +142,32 @@ def perform_moire_analysis(image_bytes: bytes) -> Dict[str, Any]:
         reasons = []
 
         # Organic Real Scene Safety Gate:
-        # If flat block ratio is virtually zero AND H/V alignment is low, it is a genuine natural scene.
-        is_organic_real_scene = (flat_ratio < 0.06) and (hv_ratio < 0.28) and not has_screen_frame
+        # Genuine physical scenes (poultry, feathers, eggs, soil, room, hand) have organic textures:
+        # low flat-block ratio (< 0.08), low H/V edge alignment (< 0.32), and normal high-frequency peaks (< 300).
+        is_organic_real_scene = (flat_ratio < 0.08) and (hv_ratio < 0.32) and (peaks_high < 300)
 
         if not is_organic_real_scene:
             # Check A: Digital UI / Screenshot / Browser / App display
-            if flat_ratio > 0.10 and hv_ratio > 0.32:
+            if flat_ratio > 0.10 and hv_ratio > 0.30:
                 is_screen = True
                 detected_device = "laptop / computer screen"
                 reasons.append(f"Digital UI detected (flat blocks: {flat_ratio*100:.1f}%, H/V edges: {hv_ratio*100:.1f}%)")
-            elif flat_ratio > 0.15:
+            elif flat_ratio > 0.14:
                 is_screen = True
                 detected_device = "digital display"
                 reasons.append(f"Electronic display detected (flat block ratio: {flat_ratio*100:.1f}%)")
-            elif hv_ratio > 0.35 and long_line_count > 30:
+            elif hv_ratio > 0.34 and long_line_count > 30:
                 is_screen = True
                 detected_device = "laptop or monitor screen"
                 reasons.append(f"Display window geometry detected (H/V alignment: {hv_ratio*100:.1f}%, {long_line_count} raster lines)")
 
             # Check B: Physical photo taken OF a screen (Laptop, Mobile phone, Tablet, TV)
             if not is_screen:
-                if has_screen_frame and (peaks_mid > 200 or peaks_high > 50):
+                if has_screen_frame and peaks_high > 250:
                     is_screen = True
                     detected_device = "laptop / TV / mobile screen"
-                    reasons.append(f"Physical display bezel detected ({frame_aspect}:1 ratio) with screen pixel Moiré pattern")
-                elif peaks_high > 400 and (flat_ratio > 0.05 or hv_ratio > 0.25):
+                    reasons.append(f"Physical display bezel detected ({frame_aspect}:1 ratio) with screen pixel Moiré pattern ({peaks_high} peaks)")
+                elif peaks_high > 350 and (flat_ratio > 0.06 or hv_ratio > 0.26):
                     is_screen = True
                     detected_device = "electronic display screen"
                     reasons.append(f"High-frequency LCD/OLED display pixel grid (Moiré) detected ({peaks_high} harmonic peaks)")

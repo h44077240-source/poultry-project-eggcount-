@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   X, Upload, Loader2, Camera, 
   CheckCircle, Navigation, ShieldCheck, ShieldAlert, Check
@@ -61,41 +61,17 @@ export default function UploadEvidenceModal({ onClose, onSuccess }: UploadEviden
 
   // Helper: Multi-source high-accuracy reverse geocode to street / place address
   const fetchAddress = async (lat: number, lng: number): Promise<string> => {
-    // 1. Primary: OpenStreetMap Nominatim with local details
+    // 1. Primary: backend high-accuracy reverse geocode endpoint (handles Nominatim + custom headers + zero CORS)
     try {
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`,
-        { headers: { 'Accept-Language': 'en' }, signal: AbortSignal.timeout(4000) }
-      );
+      const res = await fetch(`/api/gis/reverse-geocode?lat=${lat}&lng=${lng}`, {
+        signal: AbortSignal.timeout(4500)
+      });
       if (res.ok) {
         const data = await res.json();
-        if (data && data.address) {
-          const a = data.address;
-          const landmark = a.amenity || a.building || a.shop || a.leisure || '';
-          const road = a.road || a.pedestrian || a.suburb || a.neighbourhood || a.residential || '';
-          const locality = (a.suburb || a.neighbourhood) && (a.suburb !== road) ? (a.suburb || a.neighbourhood) : '';
-          const townOrCity = a.village || a.town || a.city || a.municipality || a.county || '';
-          const stateDist = (a.state_district && a.state_district !== townOrCity) ? a.state_district : '';
-          const state = a.state || '';
-          const postcode = a.postcode ? `${a.postcode}` : '';
-
-          const parts = [
-            landmark,
-            road,
-            locality,
-            townOrCity,
-            stateDist,
-            state ? `${state}${postcode ? ` - ${postcode}` : ''}` : postcode,
-            a.country
-          ].filter(Boolean);
-
-          const uniqueParts = parts.filter((part, idx) => parts.indexOf(part) === idx);
-          if (uniqueParts.length > 0) return uniqueParts.join(', ');
-        }
-        if (data.display_name) return data.display_name;
+        if (data && data.address) return data.address;
       }
     } catch (e) {
-      console.warn('Nominatim reverse geocode note:', e);
+      console.warn('Backend reverse geocode note:', e);
     }
 
     // 2. Secondary fallback: BigDataCloud client API
@@ -118,15 +94,38 @@ export default function UploadEvidenceModal({ onClose, onSuccess }: UploadEviden
       console.warn('BDC reverse geocode fallback note:', e);
     }
 
-    return `${lat.toFixed(6)}° N, ${lng.toFixed(6)}° E`;
+    const latCard = lat >= 0 ? 'N' : 'S';
+    const lngCard = lng >= 0 ? 'E' : 'W';
+    return `${Math.abs(lat).toFixed(6)}° ${latCard}, ${Math.abs(lng).toFixed(6)}° ${lngCard}`;
   };
 
-  // Continuous active GPS satellite tracking
+  // Continuous active GPS satellite tracking with instant cached location support
+  const refreshLocation = useCallback(async () => {
+    if (typeof navigator !== 'undefined' && navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        async (pos) => {
+          const lat = Number(pos.coords.latitude.toFixed(6));
+          const lng = Number(pos.coords.longitude.toFixed(6));
+          const acc = Math.round(pos.coords.accuracy || 3);
+          const addr = await fetchAddress(lat, lng);
+          setLocation({ lat, lng, acc, address: addr, date: new Date() });
+          toast.success(`📍 GPS Locked: ${addr.substring(0, 30)}...`, { id: 'gps-lock' });
+        },
+        (err) => {
+          console.warn('GPS query notice:', err.message);
+          toast.error('Please allow location permission in your browser to GeoTag evidence.', { id: 'gps-err' });
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 300000 }
+      );
+    }
+  }, []);
+
   useEffect(() => {
     let watchId: number | null = null;
 
-    const startLocationWatch = async () => {
+    const startLocationWatch = () => {
       if (typeof navigator !== 'undefined' && navigator.geolocation) {
+        // Instant check (uses cached GPS if available for immediate sub-second response)
         navigator.geolocation.getCurrentPosition(
           async (pos) => {
             const lat = Number(pos.coords.latitude.toFixed(6));
@@ -135,23 +134,10 @@ export default function UploadEvidenceModal({ onClose, onSuccess }: UploadEviden
             const addr = await fetchAddress(lat, lng);
             setLocation({ lat, lng, acc, address: addr, date: new Date() });
           },
-          async (err) => {
-            console.warn('GPS initial query note:', err.message);
-            // Fallback to network IP location if hardware GPS denied or timed out
-            try {
-              const ipRes = await fetch('https://ipapi.co/json/', { signal: AbortSignal.timeout(3000) });
-              if (ipRes.ok) {
-                const ipData = await ipRes.json();
-                if (ipData.latitude && ipData.longitude) {
-                  const lat = Number(Number(ipData.latitude).toFixed(6));
-                  const lng = Number(Number(ipData.longitude).toFixed(6));
-                  const addr = [ipData.city, ipData.region, ipData.country_name].filter(Boolean).join(', ');
-                  setLocation({ lat, lng, acc: 100, address: addr, date: new Date() });
-                }
-              }
-            } catch {}
+          (err) => {
+            console.warn('GPS initial query notice:', err.message);
           },
-          { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+          { enableHighAccuracy: true, timeout: 15000, maximumAge: 300000 }
         );
 
         // Continuous watch to keep GPS locked and sub-meter accurate
@@ -171,7 +157,7 @@ export default function UploadEvidenceModal({ onClose, onSuccess }: UploadEviden
             });
           },
           (err) => console.warn('GPS watch note:', err.message),
-          { enableHighAccuracy: true, maximumAge: 1000, timeout: 15000 }
+          { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 }
         );
       }
     };
@@ -426,8 +412,8 @@ export default function UploadEvidenceModal({ onClose, onSuccess }: UploadEviden
             const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
               navigator.geolocation.getCurrentPosition(resolve, reject, {
                 enableHighAccuracy: true,
-                timeout: 8000,
-                maximumAge: 0,
+                timeout: 15000,
+                maximumAge: 300000,
               });
             });
             finalLat = Number(pos.coords.latitude.toFixed(6));
@@ -439,24 +425,9 @@ export default function UploadEvidenceModal({ onClose, onSuccess }: UploadEviden
         }
       }
 
-      // 4. Fallback: Network IP Location
+      // If still unable to find physical location, alert user to enable GPS on phone
       if (finalLat === null || finalLng === null) {
-        try {
-          const ipRes = await fetch('https://ipapi.co/json/', { signal: AbortSignal.timeout(3000) });
-          if (ipRes.ok) {
-            const ipData = await ipRes.json();
-            if (ipData.latitude && ipData.longitude) {
-              finalLat = Number(Number(ipData.latitude).toFixed(6));
-              finalLng = Number(Number(ipData.longitude).toFixed(6));
-              finalAcc = 100;
-            }
-          }
-        } catch (e) {}
-      }
-
-      // If still unable to find location, alert user to enable GPS on phone
-      if (finalLat === null || finalLng === null) {
-        toast.error('Unable to detect physical GPS coordinates. Please enable Location in your phone settings.');
+        toast.error('Unable to detect physical GPS coordinates. Please enable Location in your phone settings and tap Allow.');
         return;
       }
 
@@ -790,16 +761,37 @@ export default function UploadEvidenceModal({ onClose, onSuccess }: UploadEviden
                   <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 5 }}>
                     <Navigation size={14} color="#3B82F6" /> Automatic Location Stamped on Photo
                   </span>
-                  <span style={{
-                    fontSize: '0.68rem',
-                    padding: '2px 8px',
-                    borderRadius: 4,
-                    fontWeight: 600,
-                    background: location ? 'rgba(16, 185, 129, 0.15)' : 'rgba(234, 179, 8, 0.15)',
-                    color: location ? '#10B981' : '#EAB308'
-                  }}>
-                    {location ? '🟢 Auto-Location Ready' : '🛰️ Acquiring...'}
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <button
+                      type="button"
+                      onClick={refreshLocation}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        padding: 0,
+                        color: 'var(--brand-500)',
+                        fontSize: '0.72rem',
+                        fontWeight: 600,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 2
+                      }}
+                      title="Refresh GPS"
+                    >
+                      🔄 Refresh
+                    </button>
+                    <span style={{
+                      fontSize: '0.68rem',
+                      padding: '2px 8px',
+                      borderRadius: 4,
+                      fontWeight: 600,
+                      background: location ? 'rgba(16, 185, 129, 0.15)' : 'rgba(234, 179, 8, 0.15)',
+                      color: location ? '#10B981' : '#EAB308'
+                    }}>
+                      {location ? '🟢 Auto-Location Ready' : '🛰️ Acquiring...'}
+                    </span>
+                  </div>
                 </div>
 
                 {location ? (
