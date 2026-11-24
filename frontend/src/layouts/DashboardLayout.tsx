@@ -53,6 +53,25 @@ export default function DashboardLayout() {
             </span>
           </div>
           <div style={{ display:'flex', alignItems:'center', gap:16 }}>
+            {/* Live AI Status Pill */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '4px 12px',
+                borderRadius: 20,
+                background: 'rgba(16, 185, 129, 0.12)',
+                border: '1px solid rgba(16, 185, 129, 0.3)',
+                color: '#059669',
+                fontSize: '0.78rem',
+                fontWeight: 700,
+              }}
+            >
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#10b981', boxShadow: '0 0 6px #10b981' }} />
+              <span>AI Engine Active</span>
+            </div>
+
             {/* Theme Toggle */}
             <button
               onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}

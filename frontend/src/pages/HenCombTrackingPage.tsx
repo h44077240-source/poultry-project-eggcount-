@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
-import { Camera, Upload, RefreshCw, FileVideo, Maximize2, Minimize2, X, Video, Scan, CheckCircle2, Activity, Settings, Wifi, WifiOff, History, Trash2, Calendar, Clock, Film, Layers } from 'lucide-react'
+import { Camera, Upload, RefreshCw, FileVideo, Maximize2, Minimize2, X, Video, Scan, CheckCircle2, Activity, Settings, Wifi, WifiOff, History, Trash2, Calendar, Clock, Film, Layers, Sparkles } from 'lucide-react'
 import { getTrackerBaseUrl, getApiBaseUrl, setCustomBackendUrl } from '../utils/apiUrl'
+import HenFlockBackground from '../components/HenFlockBackground'
 
 export default function HenCombTrackingPage() {
   const [streamUrl, setStreamUrl] = useState<string | null>(null)
@@ -1443,12 +1444,21 @@ export default function HenCombTrackingPage() {
 
   return (
     <div style={{ maxWidth: 1400, margin: '0 auto', padding: '20px' }}>
-      <h2 style={{ fontSize: '2rem', fontWeight: 800, marginBottom: 8, color: 'var(--text-primary, #1e293b)', textAlign: 'center' }}>
-        Hen Counting
-      </h2>
-      <p style={{ color: 'var(--text-secondary, #475569)', textAlign: 'center', marginBottom: 20, fontSize: '1.05rem' }}>
-        Real-time Hen Counting & AI Tracking at normal speed
-      </p>
+      {/* ─── Living Hen Flock Background Canvas (Hens running across farm pasture) ─── */}
+      <HenFlockBackground />
+
+      <div style={{ textAlign: 'center', marginBottom: 20 }}>
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '4px 16px', borderRadius: 20, background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', color: '#059669', fontSize: '0.82rem', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 10 }}>
+          <Sparkles size={14} />
+          <span>Vision AI & Comb Head Tracking</span>
+        </div>
+        <h2 style={{ fontSize: '2.2rem', fontWeight: 900, marginBottom: 8, color: 'var(--text-primary, #1e293b)', letterSpacing: '-0.02em' }}>
+          Hen & Flock Counting
+        </h2>
+        <p style={{ color: 'var(--text-secondary, #475569)', fontSize: '1.05rem', maxWidth: 640, margin: '0 auto' }}>
+          Real-time hen head & comb detection with multi-camera stream processing and daily count logs
+        </p>
+      </div>
 
       {/* Backend Status & Configuration Bar */}
       <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 24, gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -1910,20 +1920,36 @@ export default function HenCombTrackingPage() {
             Select Stream Source
           </h3>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 20, width: '100%', maxWidth: 950 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 24, width: '100%', maxWidth: 1050 }}>
             {/* Card 1: Farm Hen Video Demo */}
             <div
               id="card-farm-hen-demo"
               className="ref-mode-btn"
               onClick={startDemoVideo}
-              style={{ padding: '30px 18px', borderRadius: 16, border: '2px solid rgba(168,85,247,0.4)', background: 'rgba(168,85,247,0.08)', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, transition: 'all 0.3s' }}
+              style={{
+                padding: '32px 24px',
+                borderRadius: 20,
+                border: '1.5px solid rgba(168,85,247,0.35)',
+                background: 'linear-gradient(145deg, rgba(255,255,255,0.9), rgba(168,85,247,0.06))',
+                boxShadow: '0 8px 24px -4px rgba(168,85,247,0.12)',
+                cursor: 'pointer',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: 16,
+                position: 'relative',
+                transition: 'all 0.25s ease'
+              }}
             >
-              <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'linear-gradient(135deg,#a855f7,#7c3aed)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 8px 20px rgba(168,85,247,0.4)' }}>
-                <FileVideo size={28} color="white" />
+              <div style={{ position: 'absolute', top: 12, right: 14, fontSize: '0.7rem', fontWeight: 800, padding: '3px 10px', borderRadius: 20, background: 'rgba(168,85,247,0.15)', color: '#7c3aed', letterSpacing: '0.04em' }}>
+                DEMO PREVIEW
+              </div>
+              <div style={{ width: 62, height: 62, borderRadius: '50%', background: 'linear-gradient(135deg,#a855f7,#7c3aed)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 10px 24px rgba(168,85,247,0.35)' }}>
+                <FileVideo size={30} color="white" />
               </div>
               <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary, #1e293b)' }}>Farm Hen Video</div>
-                <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary, #475569)', marginTop: 4 }}>Instant 30 FPS tracking on demo video</div>
+                <div style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-primary, #1e293b)' }}>Farm Hen Video</div>
+                <div style={{ fontSize: '0.86rem', color: 'var(--text-secondary, #475569)', marginTop: 6, lineHeight: 1.4 }}>Instant 30 FPS AI tracking on sample poultry farm video</div>
               </div>
             </div>
 
@@ -1932,17 +1958,33 @@ export default function HenCombTrackingPage() {
               id="card-upload-video"
               className="ref-mode-btn"
               onClick={() => { if (!activeLoadingCard && !isProcessing) fileInputRef.current?.click() }}
-              style={{ padding: '30px 18px', borderRadius: 16, border: '2px dashed rgba(16,185,129,0.4)', background: 'rgba(16,185,129,0.05)', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, transition: 'all 0.3s' }}
+              style={{
+                padding: '32px 24px',
+                borderRadius: 20,
+                border: '2px dashed rgba(16,185,129,0.5)',
+                background: 'linear-gradient(145deg, rgba(255,255,255,0.9), rgba(16,185,129,0.06))',
+                boxShadow: '0 8px 24px -4px rgba(16,185,129,0.15)',
+                cursor: 'pointer',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: 16,
+                position: 'relative',
+                transition: 'all 0.25s ease'
+              }}
             >
-              <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'linear-gradient(135deg,#10b981,#059669)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 8px 20px rgba(16,185,129,0.4)' }}>
-                {activeLoadingCard === 'upload' ? <RefreshCw className="animate-spin" size={28} color="white" /> : <Upload size={28} color="white" />}
+              <div style={{ position: 'absolute', top: 12, right: 14, fontSize: '0.7rem', fontWeight: 800, padding: '3px 10px', borderRadius: 20, background: '#10b981', color: '#fff', letterSpacing: '0.04em' }}>
+                RECOMMENDED
+              </div>
+              <div style={{ width: 62, height: 62, borderRadius: '50%', background: 'linear-gradient(135deg,#10b981,#059669)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 10px 24px rgba(16,185,129,0.35)' }}>
+                {activeLoadingCard === 'upload' ? <RefreshCw className="animate-spin" size={30} color="white" /> : <Upload size={30} color="white" />}
               </div>
               <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary, #1e293b)' }}>
+                <div style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-primary, #1e293b)' }}>
                   Upload Video File
                 </div>
-                <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary, #475569)', marginTop: 4 }}>
-                  Instant video playback & AI detection (0s wait)
+                <div style={{ fontSize: '0.86rem', color: 'var(--text-secondary, #475569)', marginTop: 6, lineHeight: 1.4 }}>
+                  Instant local playback & 30 FPS AI comb detection (0s wait)
                 </div>
               </div>
             </div>
@@ -1953,14 +1995,30 @@ export default function HenCombTrackingPage() {
               id="card-live-camera"
               className="ref-mode-btn"
               onClick={() => startLiveCamera('environment')}
-              style={{ padding: '30px 18px', borderRadius: 16, border: '2px solid rgba(59,130,246,0.4)', background: 'rgba(59,130,246,0.08)', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, transition: 'all 0.3s' }}
+              style={{
+                padding: '32px 24px',
+                borderRadius: 20,
+                border: '1.5px solid rgba(59,130,246,0.35)',
+                background: 'linear-gradient(145deg, rgba(255,255,255,0.9), rgba(59,130,246,0.06))',
+                boxShadow: '0 8px 24px -4px rgba(59,130,246,0.12)',
+                cursor: 'pointer',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: 16,
+                position: 'relative',
+                transition: 'all 0.25s ease'
+              }}
             >
-              <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'linear-gradient(135deg,#3b82f6,#1d4ed8)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 8px 20px rgba(59,130,246,0.4)' }}>
-                <Camera size={28} color="white" />
+              <div style={{ position: 'absolute', top: 12, right: 14, fontSize: '0.7rem', fontWeight: 800, padding: '3px 10px', borderRadius: 20, background: 'rgba(59,130,246,0.15)', color: '#2563eb', letterSpacing: '0.04em' }}>
+                REAL-TIME WEBCAM
+              </div>
+              <div style={{ width: 62, height: 62, borderRadius: '50%', background: 'linear-gradient(135deg,#3b82f6,#1d4ed8)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 10px 24px rgba(59,130,246,0.35)' }}>
+                <Camera size={30} color="white" />
               </div>
               <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary, #1e293b)' }}>Live Camera Stream</div>
-                <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary, #475569)', marginTop: 4 }}>Full-screen real-time hen comb tracking directly from phone camera</div>
+                <div style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-primary, #1e293b)' }}>Live Camera Stream</div>
+                <div style={{ fontSize: '0.86rem', color: 'var(--text-secondary, #475569)', marginTop: 6, lineHeight: 1.4 }}>Full-screen real-time hen comb tracking directly from phone camera</div>
               </div>
             </div>
           </div>
