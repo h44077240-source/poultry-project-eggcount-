@@ -115,7 +115,7 @@ class OpticalHenTracker:
                 results = self.model.predict(
                     source=f,
                     verbose=False,
-                    conf=0.03,
+                    conf=0.18,
                     iou=0.35,
                     imgsz=infer_imgsz,
                     device=self.DEVICE
@@ -145,14 +145,21 @@ class OpticalHenTracker:
                         x1, y1, x2, y2 = map(int, box)
                         hw = x2 - x1
                         hh = y2 - y1
-                        if hw < 4 or hh < 4:
+                        if hw < 8 or hh < 8:
                             continue
                         if hw > max_comb_w or hh > max_comb_h or (hw * hh) > max_area:
                             continue
 
                         search_hh = hh * 0.45 if hh > 35 else hh
                         crop_red = comb_red[y1:min(fh - 1, int(y1 + search_hh)), x1:x2]
-                        has_red = np.count_nonzero(crop_red) >= 3
+                        comb_px = np.count_nonzero(crop_red)
+                        has_red = comb_px >= 8
+
+                        # Strict False-Positive Filtering:
+                        if float(conf) < 0.28 and not has_red:
+                            continue
+                        if comb_px < 3 and float(conf) < 0.35:
+                            continue
 
                         scale_factor = max(fw, fh) / 640.0
                         if has_red:
@@ -202,7 +209,7 @@ class OpticalHenTracker:
                     for ex in kept_dets:
                         c2 = ex["center"]
                         diag2 = ex["diag"]
-                        if math.hypot(c1[0] - c2[0], c1[1] - c2[1]) < 8.0:
+                        if math.hypot(c1[0] - c2[0], c1[1] - c2[1]) < 16.0:
                             overlap = True
                             break
                     if not overlap:
@@ -217,7 +224,9 @@ class OpticalHenTracker:
     def reset_state(self):
         with self.state_lock:
             self.hens = {}
+            self.tentative_hens = {}
             self.next_hen_number = 1
+            self.next_tentative_id = 1
             self.max_total_hens = 0
             self.prev_gray = None
             self.prev_small_gray = None
@@ -253,7 +262,7 @@ class OpticalHenTracker:
                     init_res = self.model.predict(
                         source=frame,
                         verbose=False,
-                        conf=0.025,
+                        conf=0.22,
                         iou=0.45,
                         imgsz=init_imgsz,
                         device=self.DEVICE
@@ -272,11 +281,18 @@ class OpticalHenTracker:
                         scale_factor = max(fw, fh) / 640.0
                         for box, conf in zip(boxes, confs):
                             x1, y1, x2, y2 = map(int, box)
+                            if (x2 - x1) < 8 or (y2 - y1) < 8:
+                                continue
                             x1, y1 = max(0, min(fw - 1, x1)), max(0, min(fh - 1, y1))
                             x2, y2 = max(0, min(fw - 1, x2)), max(0, min(fh - 1, y2))
                             crop_red = comb_red[y1:y2, x1:x2]
                             comb_px = np.count_nonzero(crop_red)
-                            if comb_px >= 3:
+                            if float(conf) < 0.28 and comb_px < 8:
+                                continue
+                            if comb_px < 3 and float(conf) < 0.35:
+                                continue
+
+                            if comb_px >= 8:
                                 ys, xs = np.where(crop_red)
                                 cx = x1 + float(np.median(xs))
                                 cy = y1 + float(np.median(ys))
@@ -458,10 +474,11 @@ class OpticalHenTracker:
                     if hid not in used_hens:
                         hdata["lost"] += 1
 
-                # Stage 2: Register New Hen entering the zone (Unique IDs, zero repeats!)
-                min_new_dist = 12.0
-                unmatched_fresh = [det for det_idx, det in enumerate(fresh) if det_idx not in used_dets and det.get("conf", 0.0) >= 0.03]
+                # Stage 2: Register New Hen entering the zone (Multi-frame confirmation eliminates all spurious 1-frame noise)
+                min_new_dist = 24.0
+                unmatched_fresh = [det for det_idx, det in enumerate(fresh) if det_idx not in used_dets and det.get("conf", 0.0) >= 0.18]
                 unmatched_fresh.sort(key=lambda d: -d["center"][1])
+                updated_t = set()
                 for det in unmatched_fresh:
                     cx, cy = det["center"]
 
@@ -477,18 +494,51 @@ class OpticalHenTracker:
                     if is_near_active:
                         continue
 
-                    # Truly new hen entered the zone: assign a new unique ID! Never repeat!
-                    hid = self.next_hen_number
-                    self.next_hen_number += 1
-                    self.hens[hid] = {
-                        "box": list(det["box"]),
-                        "center": (cx, cy),
-                        "velocity": (0.0, 0.0),
-                        "lost": 0,
-                        "hits": 1,
-                        "conf": det["conf"]
-                    }
-                    used_hens.add(hid)
+                    # Match against tentative tracklets
+                    matched_tid = None
+                    best_t_dist = 28.0
+                    for tid, tdata in self.tentative_hens.items():
+                        dist = math.hypot(cx - tdata["center"][0], cy - tdata["center"][1])
+                        if dist < best_t_dist:
+                            best_t_dist = dist
+                            matched_tid = tid
+
+                    if matched_tid is not None:
+                        updated_t.add(matched_tid)
+                        t = self.tentative_hens[matched_tid]
+                        t["hits"] += 1
+                        t["lost"] = 0
+                        t["center"] = (cx, cy)
+                        t["box"] = list(det["box"])
+                        if t["hits"] >= 3:
+                            hid = self.next_hen_number
+                            self.next_hen_number += 1
+                            self.hens[hid] = {
+                                "box": list(det["box"]),
+                                "center": (cx, cy),
+                                "velocity": (0.0, 0.0),
+                                "lost": 0,
+                                "hits": t["hits"],
+                                "conf": det["conf"]
+                            }
+                            used_hens.add(hid)
+                            del self.tentative_hens[matched_tid]
+                    else:
+                        self.tentative_hens[self.next_tentative_id] = {
+                            "box": list(det["box"]),
+                            "center": (cx, cy),
+                            "hits": 1,
+                            "lost": 0
+                        }
+                        updated_t.add(self.next_tentative_id)
+                        self.next_tentative_id += 1
+
+                # Cleanly discard unconfirmed 1-frame or 2-frame noise glitches
+                for tid in list(self.tentative_hens.keys()):
+                    if tid not in updated_t:
+                        self.tentative_hens[tid]["lost"] += 1
+                        if self.tentative_hens[tid]["lost"] >= 2:
+                            del self.tentative_hens[tid]
 
             # IMMEDIATE RETIREMENT: When a hen actually leaves the screen/zone or is lost
             # When a hen leaves the screen, its box vanishes immediately and ID is permanently preserved!
