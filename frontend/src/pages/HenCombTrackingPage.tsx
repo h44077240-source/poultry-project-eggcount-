@@ -2,7 +2,6 @@ import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { Camera, Upload, RefreshCw, FileVideo, Maximize2, Minimize2, X, Video, Scan, CheckCircle2, Activity, Settings, Wifi, WifiOff, History, Trash2, Calendar, Clock, Film, Layers, Sparkles } from 'lucide-react'
 import { getTrackerBaseUrl, getApiBaseUrl, setCustomBackendUrl } from '../utils/apiUrl'
-import HenFlockBackground from '../components/HenFlockBackground'
 
 export default function HenCombTrackingPage() {
   const [streamUrl, setStreamUrl] = useState<string | null>(null)
@@ -1443,22 +1442,87 @@ export default function HenCombTrackingPage() {
   }
 
   return (
-    <div style={{ maxWidth: 1400, margin: '0 auto', padding: '20px' }}>
-      {/* ─── Living Hen Flock Background Canvas (Hens running across farm pasture) ─── */}
-      <HenFlockBackground />
+    <div style={{ position: 'relative', minHeight: '100vh', width: '100%', margin: '-28px', padding: '28px 20px' }}>
+      {/* ─── Real Commercial Poultry Farm Background Video (Live White Hens Moving in Shed) ─── */}
+      <div
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          zIndex: 0,
+          overflow: 'hidden',
+          pointerEvents: 'none',
+        }}
+      >
+        <video
+          autoPlay
+          loop
+          muted
+          playsInline
+          poster="/real_white_hens_poster.jpg"
+          style={{
+            position: 'absolute',
+            top: '50%',
+            left: '50%',
+            minWidth: '100%',
+            minHeight: '100%',
+            width: 'auto',
+            height: 'auto',
+            transform: 'translate(-50%, -50%)',
+            objectFit: 'cover',
+            filter: 'brightness(0.96) contrast(1.05)',
+          }}
+        >
+          <source src="/real_white_hens_bg.mp4" type="video/mp4" />
+        </video>
 
-      <div style={{ textAlign: 'center', marginBottom: 20 }}>
-        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '4px 16px', borderRadius: 20, background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', color: '#059669', fontSize: '0.82rem', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 10 }}>
-          <Sparkles size={14} />
-          <span>Vision AI & Comb Head Tracking</span>
-        </div>
-        <h2 style={{ fontSize: '2.2rem', fontWeight: 900, marginBottom: 8, color: 'var(--text-primary, #1e293b)', letterSpacing: '-0.02em' }}>
-          Hen & Flock Counting
-        </h2>
-        <p style={{ color: 'var(--text-secondary, #475569)', fontSize: '1.05rem', maxWidth: 640, margin: '0 auto' }}>
-          Real-time hen head & comb detection with multi-camera stream processing and daily count logs
-        </p>
+        {/* Soft frosted glass tint so real white hens moving in farm are clearly visible, while text & cards remain crisp */}
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            background: 'linear-gradient(180deg, rgba(248, 250, 252, 0.48) 0%, rgba(241, 245, 249, 0.58) 50%, rgba(226, 232, 240, 0.65) 100%)',
+            backdropFilter: 'blur(1.5px)',
+            WebkitBackdropFilter: 'blur(1.5px)',
+          }}
+        />
       </div>
+
+      {/* ─── Main Content Container (Glassmorphic Dashboard on top of Real White Hen Video) ─── */}
+      <div style={{ position: 'relative', zIndex: 1, maxWidth: 1400, margin: '0 auto' }}>
+        <div style={{ textAlign: 'center', marginBottom: 24 }}>
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '6px 18px',
+              borderRadius: 30,
+              background: 'rgba(255, 255, 255, 0.92)',
+              backdropFilter: 'blur(12px)',
+              border: '1.5px solid rgba(16, 185, 129, 0.45)',
+              color: '#047857',
+              fontSize: '0.82rem',
+              fontWeight: 800,
+              letterSpacing: '0.05em',
+              textTransform: 'uppercase',
+              marginBottom: 12,
+              boxShadow: '0 4px 16px rgba(0, 0, 0, 0.08)',
+            }}
+          >
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#10b981', boxShadow: '0 0 10px #10b981', animation: 'live-pulse 1.2s infinite' }} />
+            <span>Commercial Poultry Farm • Live White Hen Video Feed</span>
+          </div>
+
+          <h2 style={{ fontSize: '2.5rem', fontWeight: 900, marginBottom: 8, color: '#0f172a', letterSpacing: '-0.025em', textShadow: '0 2px 10px rgba(255, 255, 255, 0.85)' }}>
+            Hen & Flock Counting
+          </h2>
+          <p style={{ color: '#334155', fontSize: '1.05rem', maxWidth: 660, margin: '0 auto', fontWeight: 600, textShadow: '0 1px 4px rgba(255, 255, 255, 0.9)' }}>
+            Real-time poultry farm vision AI tracking & automatic flock counting
+          </p>
+        </div>
 
       {/* Backend Status & Configuration Bar */}
       <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 24, gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -2747,6 +2811,7 @@ export default function HenCombTrackingPage() {
         .animate-spin { animation: spin 1s linear infinite; }
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
       `}</style>
+      </div>
     </div>
   )
 }
