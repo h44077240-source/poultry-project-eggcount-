@@ -142,37 +142,172 @@ def group_columns(side_boxes: np.ndarray) -> List[np.ndarray]:
     return columns
 
 
-def detect_side_view_with_adaptive_thresholds(model: YOLO, side_img: np.ndarray) -> Tuple[Any, List[int], int]:
+def filter_and_validate_side_boxes(boxes: np.ndarray, confs: np.ndarray, img_shape: tuple) -> List[Tuple[np.ndarray, np.ndarray]]:
     """
-    Runs multi-threshold detection on side view to ensure no trays are missed:
-    Tries 0.25 -> 0.18 -> 0.12 if detection count is sparse.
+    Strictly filters out background clutter (road cracks, ground shadows, trees, poles):
+    1. Aspect ratio: in side view, a tray is a thin horizontal slice (AR >= 1.8).
+    2. Width consistency: rejects wide road cracks that span across stacks.
+    3. Column grouping: clusters trays into stacked columns.
+    4. Vertical continuity: removes isolated outliers separated by large vertical gaps.
     """
-    best_res = None
+    if len(boxes) == 0:
+        return []
+
+    widths = boxes[:, 2] - boxes[:, 0]
+    heights = boxes[:, 3] - boxes[:, 1]
+    aspect_ratios = widths / np.maximum(heights, 1)
+
+    # 1. Aspect ratio filter: individual trays must be horizontal slices
+    mask = (aspect_ratios >= 1.8) & (widths < img_shape[1] * 0.6)
+    if np.sum(mask) == 0:
+        return []
+
+    c_boxes = boxes[mask]
+    c_confs = confs[mask]
+    c_widths = widths[mask]
+    c_heights = heights[mask]
+
+    # Reference tray width & height from strongest candidates
+    ref_w = np.median(c_widths)
+    ref_h = np.median(c_heights)
+
+    # 2. Width consistency: reject cracks that are significantly wider than normal trays
+    width_mask = (c_widths >= ref_w * 0.6) & (c_widths <= ref_w * 1.45)
+    c_boxes = c_boxes[width_mask]
+    c_confs = c_confs[width_mask]
+
+    if len(c_boxes) == 0:
+        return []
+
+    # 3. Group by X-center into vertical columns
+    x_centers = (c_boxes[:, 0] + c_boxes[:, 2]) / 2
+    sorted_idx = np.argsort(x_centers)
+
+    columns: List[Tuple[List[np.ndarray], List[float]]] = []
+    current_col = [c_boxes[sorted_idx[0]]]
+    current_confs = [c_confs[sorted_idx[0]]]
+
+    for idx in sorted_idx[1:]:
+        b = c_boxes[idx]
+        b_x = (b[0] + b[2]) / 2
+        prev_x = np.mean([(cb[0] + cb[2]) / 2 for cb in current_col])
+
+        if abs(b_x - prev_x) < (ref_w * 0.5):
+            current_col.append(b)
+            current_confs.append(c_confs[idx])
+        else:
+            columns.append((current_col, current_confs))
+            current_col = [b]
+            current_confs = [c_confs[idx]]
+    columns.append((current_col, current_confs))
+
+    # 4. Vertical continuity: drop isolated outliers (floor cracks, sky/trees, etc.)
+    valid_columns: List[Tuple[np.ndarray, np.ndarray]] = []
+    for col_b_list, col_c_list in columns:
+        col_boxes = np.array(col_b_list)
+        col_confs = np.array(col_c_list)
+
+        # An egg stack must have at least 3 layers
+        if len(col_boxes) < 3:
+            continue
+
+        # Sort top-to-bottom by Y-center
+        y_centers = (col_boxes[:, 1] + col_boxes[:, 3]) / 2
+        y_sort = np.argsort(y_centers)
+        col_boxes = col_boxes[y_sort]
+        col_confs = col_confs[y_sort]
+        y_centers = y_centers[y_sort]
+
+        box_h = np.median(col_boxes[:, 3] - col_boxes[:, 1])
+        keep = np.ones(len(col_boxes), dtype=bool)
+
+        for i in range(len(col_boxes)):
+            dists = []
+            if i > 0:
+                dists.append(abs(y_centers[i] - y_centers[i - 1]))
+            if i < len(col_boxes) - 1:
+                dists.append(abs(y_centers[i + 1] - y_centers[i]))
+            min_dist = min(dists) if dists else 999.0
+            # If no neighbouring tray exists within 3.5x normal height, it's an outlier (e.g. road crack)
+            if min_dist > (box_h * 3.5):
+                keep[i] = False
+
+        filtered_col = col_boxes[keep]
+        filtered_confs = col_confs[keep]
+        if len(filtered_col) >= 3:
+            valid_columns.append((filtered_col, filtered_confs))
+
+    return valid_columns
+
+
+def draw_validated_side_detections(img: np.ndarray, valid_columns: List[Tuple[np.ndarray, np.ndarray]]) -> np.ndarray:
+    """Draws clear bounding boxes ONLY on validated egg tray stacks, never on road cracks or background."""
+    annotated = img.copy()
+    col_colors = [
+        (255, 120, 0),   # Cyan/blue
+        (0, 165, 255),   # Amber/orange
+        (0, 220, 0),     # Green
+        (255, 50, 200)   # Magenta
+    ]
+    for c_idx, (col_boxes, col_confs) in enumerate(valid_columns):
+        color = col_colors[c_idx % len(col_colors)]
+        for box, conf in zip(col_boxes, col_confs):
+            x1, y1, x2, y2 = map(int, box)
+            cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
+            label = f"egg_tray {conf:.2f}"
+            (lw, lh), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.35, 1)
+            cv2.rectangle(annotated, (x1, max(0, y1 - lh - 4)), (x1 + lw + 2, y1), color, -1)
+            cv2.putText(annotated, label, (x1 + 1, max(lh + 1, y1 - 2)), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (255, 255, 255), 1, cv2.LINE_AA)
+    return annotated
+
+
+def draw_validated_top_detections(img: np.ndarray, boxes: np.ndarray, confs: np.ndarray) -> np.ndarray:
+    """Draws clear bounding boxes for top view stacks, filtering out lines or background borders."""
+    annotated = img.copy()
+    color = (0, 200, 255)  # Amber
+    for box, conf in zip(boxes, confs):
+        x1, y1, x2, y2 = map(int, box)
+        cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
+        label = f"egg_tray {conf:.2f}"
+        (lw, lh), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.4, 1)
+        cv2.rectangle(annotated, (x1, max(0, y1 - lh - 4)), (x1 + lw + 2, y1), color, -1)
+        cv2.putText(annotated, label, (x1 + 1, max(lh + 1, y1 - 2)), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 0), 1, cv2.LINE_AA)
+    return annotated
+
+
+def detect_side_view_with_adaptive_thresholds(model: YOLO, side_img: np.ndarray) -> Tuple[np.ndarray, List[int], int]:
+    """
+    Runs multi-threshold detection on side view with geometric and continuity filtering.
+    Eliminates all false positives on road cracks and trees.
+    """
+    best_annotated = side_img.copy()
     best_col_heights: List[int] = []
     best_stack_height = 0
     max_detected = 0
 
-    for conf in [0.25, 0.18, 0.12]:
+    for conf in [0.25, 0.20, 0.15]:
         res = model(side_img, conf=conf, iou=0.45, verbose=False)[0]
-        num_boxes = len(res.boxes)
-        if num_boxes > max_detected:
-            max_detected = num_boxes
-            best_res = res
-            if num_boxes > 0:
-                side_boxes = res.boxes.xyxy.cpu().numpy()
-                columns = group_columns(side_boxes)
-                col_heights = [count_column_trays(col) for col in columns]
-                best_col_heights = col_heights
-                best_stack_height = max(col_heights) if col_heights else 0
+        raw_boxes = res.boxes.xyxy.cpu().numpy()
+        raw_confs = res.boxes.conf.cpu().numpy()
 
-        # If we got substantial detections (> 20 trays or consistent heights), stop adapting
-        if num_boxes >= 20:
-            break
+        if len(raw_boxes) > 0:
+            valid_cols = filter_and_validate_side_boxes(raw_boxes, raw_confs, side_img.shape)
+            total_valid_boxes = sum(len(cb) for cb, _ in valid_cols)
+            if total_valid_boxes > max_detected:
+                max_detected = total_valid_boxes
+                best_col_heights = [count_column_trays(cb) for cb, _ in valid_cols]
+                best_stack_height = max(best_col_heights) if best_col_heights else 0
+                best_annotated = draw_validated_side_detections(side_img, valid_cols)
 
-    if best_res is None:
-        best_res = model(side_img, conf=0.15, iou=0.45, verbose=False)[0]
+            if total_valid_boxes >= 15:
+                break
 
-    return best_res, best_col_heights, best_stack_height
+    if max_detected == 0:
+        # Fallback raw model plot only if zero valid columns were identified
+        res = model(side_img, conf=0.15, iou=0.45, verbose=False)[0]
+        best_annotated = res.plot()
+
+    return best_annotated, best_col_heights, best_stack_height
 
 
 def analyze_dual_egg_trays(img1_bytes: bytes, img2_bytes: bytes) -> Dict[str, Any]:
@@ -225,15 +360,30 @@ def analyze_dual_egg_trays(img1_bytes: bytes, img2_bytes: bytes) -> Dict[str, An
 
     # 1. Top View Detection (Stack count)
     # Stacks in top view are detected with high confidence
-    top_res = model(top_img, conf=0.45, iou=0.25, verbose=False)[0]
+    top_res = model(top_img, conf=0.40, iou=0.25, verbose=False)[0]
     num_stacks = len(top_res.boxes)
     if num_stacks == 0:
         # Fallback slightly lower threshold if top view is dimly lit
-        top_res = model(top_img, conf=0.25, iou=0.25, verbose=False)[0]
+        top_res = model(top_img, conf=0.22, iou=0.25, verbose=False)[0]
         num_stacks = len(top_res.boxes)
 
-    # 2. Side View Detection (Layer pitch & column heights)
-    side_res, col_heights, stack_height = detect_side_view_with_adaptive_thresholds(model, side_img)
+    # Filter top view boxes: trays from above are approximately square, not thin lines or borders
+    if num_stacks > 0:
+        top_boxes = top_res.boxes.xyxy.cpu().numpy()
+        top_confs = top_res.boxes.conf.cpu().numpy()
+        top_w = top_boxes[:, 2] - top_boxes[:, 0]
+        top_h = top_boxes[:, 3] - top_boxes[:, 1]
+        top_ar = top_w / np.maximum(top_h, 1)
+        valid_top_mask = (top_ar >= 0.5) & (top_ar <= 2.2) & (top_w >= 15) & (top_h >= 15)
+        top_boxes = top_boxes[valid_top_mask]
+        top_confs = top_confs[valid_top_mask]
+        num_stacks = len(top_boxes)
+        top_plotted = draw_validated_top_detections(top_img, top_boxes, top_confs)
+    else:
+        top_plotted = top_img.copy()
+
+    # 2. Side View Detection (Layer pitch & column heights with strict crack/noise elimination)
+    side_plotted, col_heights, stack_height = detect_side_view_with_adaptive_thresholds(model, side_img)
 
     num_columns_side = len(col_heights)
 
@@ -255,10 +405,7 @@ def analyze_dual_egg_trays(img1_bytes: bytes, img2_bytes: bytes) -> Dict[str, An
 
     total_eggs = total_trays * EGGS_PER_TRAY
 
-    # Generate annotated images with bounding boxes plotted
-    top_plotted = top_res.plot()
-    side_plotted = side_res.plot()
-
+    # Generate base64 annotated images with bounding boxes plotted (cleaned of all background noise)
     _, top_buf = cv2.imencode(".jpg", top_plotted)
     top_b64 = "data:image/jpeg;base64," + base64.b64encode(top_buf).decode("utf-8")
 
