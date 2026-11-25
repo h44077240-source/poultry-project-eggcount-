@@ -115,13 +115,15 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from pathlib import Path
 
+backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
-if base_dir not in sys.path:
-    sys.path.append(base_dir)
+for p in [backend_dir, base_dir]:
+    if p not in sys.path:
+        sys.path.insert(0, p)
 
 try:
     import flask_app
-    print("[TRACKER] flask_app loaded successfully for stream processing.")
+    print(f"[TRACKER] flask_app loaded successfully from {flask_app.__file__}")
 except Exception as e:
     print(f"[TRACKER] Notice: Could not import flask_app: {e}")
     flask_app = None
