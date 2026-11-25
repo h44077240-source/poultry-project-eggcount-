@@ -858,7 +858,7 @@ export default function HenCombTrackingPage() {
 
     // Store normalized coordinates [0.0 - 1.0] relative to processed frame
     // This mathematically ensures pixel-perfect alignment on any screen dimensions!
-    const parsedDets = rawDets.map((item: any) => {
+    const detections = rawDets.map((item: any) => {
       const b = item.box || [0, 0, 0, 0]
       return {
         ...item,
@@ -870,34 +870,6 @@ export default function HenCombTrackingPage() {
         ]
       }
     })
-
-    // Strict frontend deduplication: zero duplicate boxes on the same hen comb
-    const detections: any[] = []
-    for (const d of parsedDets) {
-      const nb = d.normBox
-      const cx = (nb[0] + nb[2]) / 2
-      const cy = (nb[1] + nb[3]) / 2
-      let isDup = false
-      for (const ex of detections) {
-        const enb = ex.normBox
-        const ecx = (enb[0] + enb[2]) / 2
-        const ecy = (enb[1] + enb[3]) / 2
-        const dist = Math.hypot(cx - ecx, cy - ecy)
-        const ix1 = Math.max(nb[0], enb[0]), iy1 = Math.max(nb[1], enb[1])
-        const ix2 = Math.min(nb[2], enb[2]), iy2 = Math.min(nb[3], enb[3])
-        const iw = Math.max(0, ix2 - ix1), ih = Math.max(0, iy2 - iy1)
-        const inter = iw * ih
-        const u = (nb[2] - nb[0]) * (nb[3] - nb[1]) + (enb[2] - enb[0]) * (enb[3] - enb[1]) - inter
-        const iou = u > 0 ? inter / u : 0
-        if (dist < 0.038 || iou > 0.15) {
-          isDup = true
-          break
-        }
-      }
-      if (!isDup) {
-        detections.push(d)
-      }
-    }
 
     // Keep detections strictly sorted by sequential hen_number: 1, 2, 3, 4, 5...
     detections.sort((a: any, b: any) => (a.hen_number || 0) - (b.hen_number || 0))
@@ -1033,20 +1005,11 @@ export default function HenCombTrackingPage() {
       let width = targetW
       let height = targetH
       if (prevBox) {
-        const moveDist = Math.hypot(targetX - prevBox[0], targetY - prevBox[1])
-        if (moveDist < 38) {
-          const LERP = 0.50
-          x = prevBox[0] + (targetX - prevBox[0]) * LERP
-          y = prevBox[1] + (targetY - prevBox[1]) * LERP
-          width = prevBox[2] + (targetW - prevBox[2]) * LERP
-          height = prevBox[3] + (targetH - prevBox[3]) * LERP
-        } else {
-          // Snap directly if position jumped significantly, preventing gliding across hens
-          x = targetX
-          y = targetY
-          width = targetW
-          height = targetH
-        }
+        const LERP = 0.50
+        x = prevBox[0] + (targetX - prevBox[0]) * LERP
+        y = prevBox[1] + (targetY - prevBox[1]) * LERP
+        width = prevBox[2] + (targetW - prevBox[2]) * LERP
+        height = prevBox[3] + (targetH - prevBox[3]) * LERP
       }
       animBoxesRef.current.set(henId, [x, y, width, height])
 
