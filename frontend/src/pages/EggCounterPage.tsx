@@ -1143,9 +1143,12 @@ export default function EggCounterPage() {
                       transition: 'all 0.2s',
                     }}
                   >
-                    <UploadCloud size={32} color="var(--brand-500)" style={{ marginBottom: 12 }} />
-                    <span style={{ color: 'var(--text-primary)', fontWeight: 500, textAlign: 'center', fontSize: '0.95rem' }}>
-                      Top View
+                    <UploadCloud size={32} color="var(--brand-500)" style={{ marginBottom: 8 }} />
+                    <span style={{ color: 'var(--text-primary)', fontWeight: 600, textAlign: 'center', fontSize: '0.95rem' }}>
+                      📸 Top View
+                    </span>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem', textAlign: 'center', marginTop: 4 }}>
+                      Looking down at tray stacks from above
                     </span>
                   </label>
                   <label
@@ -1163,9 +1166,12 @@ export default function EggCounterPage() {
                       transition: 'all 0.2s',
                     }}
                   >
-                    <UploadCloud size={32} color="var(--brand-500)" style={{ marginBottom: 12 }} />
-                    <span style={{ color: 'var(--text-primary)', fontWeight: 500, textAlign: 'center', fontSize: '0.95rem' }}>
-                      Side View
+                    <UploadCloud size={32} color="var(--brand-500)" style={{ marginBottom: 8 }} />
+                    <span style={{ color: 'var(--text-primary)', fontWeight: 600, textAlign: 'center', fontSize: '0.95rem' }}>
+                      📸 Side View
+                    </span>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem', textAlign: 'center', marginTop: 4 }}>
+                      Looking at stacked tray layers from side
                     </span>
                   </label>
                 </div>
@@ -1792,7 +1798,13 @@ export default function EggCounterPage() {
                       gap: 8,
                       textAlign: 'center'
                     }}>
-                      <span>✨ ML Dual View: {(openaiResult as any).num_stacks} Stacks (Top) × {(openaiResult as any).stack_height} Layers (Side) = {openaiResult.tray_count} Trays ({openaiResult.egg_count} Eggs)</span>
+                      <span>
+                        ✨ ML Dual View: {(openaiResult as any).num_stacks} Stacks (Top)
+                        {(openaiResult as any).col_heights && (openaiResult as any).col_heights.length > 1
+                          ? ` | Columns: ${(openaiResult as any).col_heights.join(' + ')} = ${openaiResult.tray_count} Trays`
+                          : ` × ${(openaiResult as any).stack_height} Layers = ${openaiResult.tray_count} Trays`}
+                        {` (${openaiResult.egg_count} Eggs)`}
+                      </span>
                     </div>
                   )}
                   {topPreviewUrl && (
