@@ -17,7 +17,7 @@ export default function HenCombTrackingPage() {
   const [totalCount, setTotalCount] = useState(0)
   const [visibleCount, setVisibleCount] = useState(0)
   const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment')
-  const [fitMode, setFitMode] = useState<'cover' | 'contain'>('cover')
+  const [fitMode, setFitMode] = useState<'cover' | 'contain'>('contain')
   const [isFullScreenVideo, setIsFullScreenVideo] = useState(false)
   const [isRecording, setIsRecording] = useState(false)
   const [recordingDuration, setRecordingDuration] = useState(0)
@@ -494,8 +494,9 @@ export default function HenCombTrackingPage() {
     setPendingVideoFile(file)
     setShowUploadChoiceModal(false)
 
-    // Always upload the user's actual selected video file so their exact video runs!
-    startCloudUpload(file)
+    // Instantly play the exact selected video locally with 0 wait time!
+    // Never show the slow 100MB uploading progress screen, and never fallback to default video!
+    startInstantLocalPlayback(file)
     if (e.target) e.target.value = ''
   }
 
@@ -694,11 +695,12 @@ export default function HenCombTrackingPage() {
         const blob = new Blob(recordedChunksRef.current, { type: mimeType })
         if (blob.size === 0) return
         stopLiveCamera()
-        setIsProcessing(true)
+        setIsProcessing(false)
         setErrorMsg(null)
         const ext = mimeType.includes('mp4') ? 'mp4' : 'webm'
         const file = new File([blob], `live_camera_recorded_${Date.now()}.${ext}`, { type: mimeType })
-        startCloudUpload(file)
+        // Play the recorded video with full AI tracking and 0s upload wait!
+        startInstantLocalPlayback(file)
       }
       recorder.start(500)
       mediaRecorderRef.current = recorder
@@ -1027,10 +1029,10 @@ export default function HenCombTrackingPage() {
       const isPortrait = renderedW < renderedH
       const maxWRatio = isPortrait ? 0.35 : 0.32
       const maxHRatio = isPortrait ? 0.38 : 0.35
-      const maxAreaRatio = 0.085
+      const maxAreaRatio = 0.25
       if (wRatio > maxWRatio || hRatio > maxHRatio || (wRatio * hRatio) > maxAreaRatio) continue
       const aspect = width / Math.max(height, 1)
-      if (aspect < 0.20 || aspect > 2.80) continue
+      if (aspect < 0.10 || aspect > 4.5) continue
       // Skip if off-screen in cover mode
       if (x + width < 0 || x > cw || y + height < 0 || y > ch) continue
 
