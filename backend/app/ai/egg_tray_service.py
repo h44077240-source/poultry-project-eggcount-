@@ -65,22 +65,24 @@ def classify_view_perspective(model: YOLO, img: np.ndarray) -> Tuple[str, float,
     Automatically detects whether an image is a 'side' view (stacked layers)
     or a 'top' view (flat 2D egg grid looking down).
 
-    Side view boxes are thin horizontal slices (width / height > 2.0).
-    Top view boxes are square/rectangular (width / height ~ 0.8 - 1.5).
+    Side view boxes are thin horizontal slices (width / height > 1.9).
+    Top view boxes are square/rectangular (width / height ~ 0.8 - 1.4).
+    Uses high-confidence candidate detection to avoid noise slivers.
     """
-    res = model(img, conf=0.15, verbose=False)[0]
-    num_boxes = len(res.boxes)
-    if num_boxes == 0:
-        return "unknown", 1.0, 0
-
-    boxes = res.boxes.xyxy.cpu().numpy()
-    widths = boxes[:, 2] - boxes[:, 0]
-    heights = boxes[:, 3] - boxes[:, 1]
-    aspect_ratios = widths / np.maximum(heights, 1)
-    median_ar = float(np.median(aspect_ratios))
-
-    view = "side" if median_ar > 2.0 else "top"
-    return view, median_ar, num_boxes
+    for conf in [0.35, 0.20]:
+        res = model(img, conf=conf, verbose=False)[0]
+        if len(res.boxes) > 0:
+            boxes = res.boxes.xyxy.cpu().numpy()
+            widths = boxes[:, 2] - boxes[:, 0]
+            heights = boxes[:, 3] - boxes[:, 1]
+            # Ignore tiny horizontal slivers/seams (height < 10)
+            valid = heights >= 10
+            if np.sum(valid) > 0:
+                ar = widths[valid] / np.maximum(heights[valid], 1)
+                median_ar = float(np.median(ar))
+                view = "side" if median_ar > 1.9 else "top"
+                return view, median_ar, len(boxes)
+    return "unknown", 1.0, 0
 
 
 def count_column_trays(col_boxes: np.ndarray) -> int:
@@ -261,6 +263,47 @@ def draw_validated_side_detections(img: np.ndarray, valid_columns: List[Tuple[np
     return annotated
 
 
+def filter_top_view_trays(boxes: np.ndarray, confs: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Strictly filters top view egg tray detections:
+    1. Rejects non-square detections (horizontal seams, borders with AR > 1.6 or AR < 0.65).
+    2. Rejects tiny fragments / floor mesh clutter whose area is < 35% of median tray area.
+    3. Rejects low confidence clutter (< 0.50, with fallback to 0.40 only if zero candidates).
+    """
+    if len(boxes) == 0:
+        return np.array([]), np.array([])
+
+    widths = boxes[:, 2] - boxes[:, 0]
+    heights = boxes[:, 3] - boxes[:, 1]
+    aspect_ratios = widths / np.maximum(heights, 1)
+    areas = widths * heights
+
+    # 1. Top view trays are approximately square
+    shape_mask = (aspect_ratios >= 0.70) & (aspect_ratios <= 1.55) & (confs >= 0.50)
+    if np.sum(shape_mask) == 0:
+        shape_mask = (aspect_ratios >= 0.65) & (aspect_ratios <= 1.65) & (confs >= 0.40)
+
+    if np.sum(shape_mask) == 0:
+        return np.array([]), np.array([])
+
+    c_boxes = boxes[shape_mask]
+    c_confs = confs[shape_mask]
+    c_widths = widths[shape_mask]
+    c_areas = areas[shape_mask]
+
+    # 2. Relative Area Consistency: genuine egg trays in the photo have consistent area
+    ref_area = np.median(c_areas)
+    ref_width = np.median(c_widths)
+
+    # Any box smaller than 35% of median area or 50% of median width is background clutter (floor, mesh, etc.)
+    size_mask = (c_areas >= ref_area * 0.35) & (c_widths >= ref_width * 0.50)
+
+    final_boxes = c_boxes[size_mask]
+    final_confs = c_confs[size_mask]
+
+    return final_boxes, final_confs
+
+
 def draw_validated_top_detections(img: np.ndarray, boxes: np.ndarray, confs: np.ndarray) -> np.ndarray:
     """Draws clear bounding boxes for top view stacks, filtering out lines or background borders."""
     annotated = img.copy()
@@ -269,9 +312,9 @@ def draw_validated_top_detections(img: np.ndarray, boxes: np.ndarray, confs: np.
         x1, y1, x2, y2 = map(int, box)
         cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
         label = f"egg_tray {conf:.2f}"
-        (lw, lh), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.4, 1)
-        cv2.rectangle(annotated, (x1, max(0, y1 - lh - 4)), (x1 + lw + 2, y1), color, -1)
-        cv2.putText(annotated, label, (x1 + 1, max(lh + 1, y1 - 2)), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 0), 1, cv2.LINE_AA)
+        (lw, lh), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
+        cv2.rectangle(annotated, (x1, max(0, y1 - lh - 4)), (x1 + lw + 4, y1), color, -1)
+        cv2.putText(annotated, label, (x1 + 2, max(lh + 1, y1 - 2)), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 0), 1, cv2.LINE_AA)
     return annotated
 
 
@@ -360,24 +403,15 @@ def analyze_dual_egg_trays(img1_bytes: bytes, img2_bytes: bytes) -> Dict[str, An
 
     # 1. Top View Detection (Stack count)
     # Stacks in top view are detected with high confidence
-    top_res = model(top_img, conf=0.40, iou=0.25, verbose=False)[0]
-    num_stacks = len(top_res.boxes)
-    if num_stacks == 0:
-        # Fallback slightly lower threshold if top view is dimly lit
-        top_res = model(top_img, conf=0.22, iou=0.25, verbose=False)[0]
-        num_stacks = len(top_res.boxes)
+    top_res = model(top_img, conf=0.35, iou=0.25, verbose=False)[0]
+    raw_top_boxes = top_res.boxes.xyxy.cpu().numpy()
+    raw_top_confs = top_res.boxes.conf.cpu().numpy()
 
-    # Filter top view boxes: trays from above are approximately square, not thin lines or borders
+    # Filter top view boxes: strictly eliminates floor patches, wire mesh, and borders
+    top_boxes, top_confs = filter_top_view_trays(raw_top_boxes, raw_top_confs)
+    num_stacks = len(top_boxes)
+
     if num_stacks > 0:
-        top_boxes = top_res.boxes.xyxy.cpu().numpy()
-        top_confs = top_res.boxes.conf.cpu().numpy()
-        top_w = top_boxes[:, 2] - top_boxes[:, 0]
-        top_h = top_boxes[:, 3] - top_boxes[:, 1]
-        top_ar = top_w / np.maximum(top_h, 1)
-        valid_top_mask = (top_ar >= 0.5) & (top_ar <= 2.2) & (top_w >= 15) & (top_h >= 15)
-        top_boxes = top_boxes[valid_top_mask]
-        top_confs = top_confs[valid_top_mask]
-        num_stacks = len(top_boxes)
         top_plotted = draw_validated_top_detections(top_img, top_boxes, top_confs)
     else:
         top_plotted = top_img.copy()
