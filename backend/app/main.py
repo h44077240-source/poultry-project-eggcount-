@@ -165,9 +165,9 @@ from fastapi.responses import FileResponse
 
 root_dir = Path(__file__).resolve().parent.parent.parent
 possible_dirs = [
-    Path(__file__).resolve().parent.parent / "static",
-    root_dir / "frontend" / "dist",
     root_dir / "dist",
+    root_dir / "frontend" / "dist",
+    Path(__file__).resolve().parent.parent / "static",
 ]
 static_dir = next((d for d in possible_dirs if d.exists() and (d / "index.html").exists()), None)
 
