@@ -3,9 +3,6 @@
   "private": true,
   "version": "1.0.0",
   "scripts": {
-    "build": "node build-frontend.js"
-  },
-  "engines": {
-    "node": ">=18.0.0"
+    "build": "echo 'Pre-built frontend ready in backend/static'"
   }
 }
