@@ -494,37 +494,7 @@ export default function HenCombTrackingPage() {
     setPendingVideoFile(file)
     setShowUploadChoiceModal(false)
 
-    // If the exact file already exists on server, stream it immediately; otherwise upload fresh file
-    const activeBackendUrl = getTrackerBaseUrl()
-    try {
-      const checkResp = await fetch(`${activeBackendUrl}/check_video/${encodeURIComponent(file.name)}`, { cache: 'no-store' })
-      if (checkResp.ok) {
-        const checkData = await checkResp.json()
-        if (checkData && checkData.exists && checkData.filename) {
-          try {
-            await fetch(`${activeBackendUrl}/reset`, { method: 'POST' })
-          } catch (e) {}
-
-          setActiveLoadingCard(null)
-          setIsProcessing(false)
-          setUploadProgress(null)
-          setUploadStatusText(null)
-          setIsStreamLoading(false)
-          setCurrentSessionSource('UPLOADED_VIDEO')
-          setCurrentVideoFilename(checkData.filename)
-          setTotalCount(0)
-          setVisibleCount(0)
-          setStreamUrl(`${activeBackendUrl}/stream_video/${encodeURIComponent(checkData.filename)}?t=${Date.now()}`)
-          setStreamMode('video')
-          if (e.target) e.target.value = ''
-          return
-        }
-      }
-    } catch (err) {
-      console.warn('Fast check_video skipped:', err)
-    }
-
-    // Always upload user's actual selected video file!
+    // Always upload the user's actual selected video file so their exact video runs!
     startCloudUpload(file)
     if (e.target) e.target.value = ''
   }

@@ -968,11 +968,28 @@ def upload():
         return jsonify({"success": False, "error": "No file uploaded"}), 400
 
     import re
+    import shutil
     raw_name = file.filename or "video.mp4"
     clean_name = re.sub(r'[^a-zA-Z0-9_.-]', '_', os.path.basename(raw_name))
     safe_filename = clean_name or f"video_{int(time.time())}.mp4"
     filepath = os.path.join(app.config['UPLOAD_FOLDER'], safe_filename)
     file.save(filepath)
+
+    # Mirror to all possible upload directories so the exact video is found
+    for extra_d in ['uploads', 'backend/uploads', '../uploads', os.path.join(os.path.dirname(__file__), 'uploads')]:
+        try:
+            os.makedirs(extra_d, exist_ok=True)
+            d_dest = os.path.join(extra_d, safe_filename)
+            if os.path.abspath(d_dest) != os.path.abspath(filepath):
+                shutil.copy2(filepath, d_dest)
+        except Exception:
+            pass
+
+    global current_total_count, current_live_count, active_stream_session_id
+    current_total_count = 0
+    current_live_count = 0
+    active_stream_session_id += 1
+
     return jsonify({"success": True, "filename": safe_filename})
 
 @app.route('/stream/<filename>')
@@ -1044,20 +1061,23 @@ def stream_video(filename):
             return Response(generate_frames_with_ref('camera', reference_settings), mimetype='multipart/x-mixed-replace; boundary=frame')
         return Response(generate_frames('camera'), mimetype='multipart/x-mixed-replace; boundary=frame')
         
-    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-    if not os.path.exists(filepath):
-        possible = [
-            os.path.abspath(os.path.join(os.path.dirname(__file__), "backend", filename)),
-            os.path.abspath(os.path.join(os.path.dirname(__file__), filename)),
-            os.path.abspath(os.path.join(os.getcwd(), "backend", filename)),
-            os.path.abspath(os.path.join(os.getcwd(), filename)),
-            os.path.abspath(os.path.join(os.path.dirname(__file__), "uploads", filename)),
-        ]
-        found = next((p for p in possible if os.path.exists(p)), None)
-        if found:
-            filepath = found
-        else:
-            return "Video not found", 404
+    possible = [
+        os.path.join(app.config['UPLOAD_FOLDER'], filename),
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "uploads", filename)),
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "uploads", filename)),
+        os.path.abspath(os.path.join(os.getcwd(), "uploads", filename)),
+        os.path.abspath(os.path.join(os.getcwd(), "backend", "uploads", filename)),
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "sample_videos", filename)),
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "sample_videos", filename)),
+        os.path.abspath(os.path.join(os.getcwd(), "sample_videos", filename)),
+        os.path.abspath(os.path.join(os.getcwd(), "backend", "sample_videos", filename)),
+        filename,
+    ]
+    found = next((p for p in possible if os.path.exists(p) and os.path.isfile(p)), None)
+    if found:
+        filepath = found
+    else:
+        return "Video not found", 404
     
     # Use reference-tuned streaming if a reference video was previously analyzed
     if reference_settings.get('reference_video') is not None:

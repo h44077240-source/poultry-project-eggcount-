@@ -224,13 +224,21 @@ async def tracker_upload(
         with open(temp_path, "wb") as buffer:
             shutil.copyfileobj(actual_file.file, buffer, length=1024*1024)
 
-        # Remove any stale cached _opt_ file so freshly uploaded video is always used directly
-        for old_opt in [UPLOAD_DIR / f"_opt_{safe_filename}", UPLOAD_DIR / f"_opt_{clean_name}"]:
-            if old_opt.exists():
-                try:
-                    old_opt.unlink()
-                except Exception:
-                    pass
+        # Mirror uploaded video across all server upload paths so it is accessible everywhere
+        mirror_dirs = [
+            PROJECT_ROOT / "backend" / "uploads",
+            PROJECT_ROOT / "uploads",
+            Path("uploads").resolve(),
+            Path("backend/uploads").resolve(),
+        ]
+        for md in mirror_dirs:
+            try:
+                md.mkdir(parents=True, exist_ok=True)
+                dest = md / safe_filename
+                if str(dest) != str(temp_path):
+                    shutil.copy2(str(temp_path), str(dest))
+            except Exception:
+                pass
 
         # Reset counts and tracker state for this new video so count starts fresh from beginning
         global global_live_tracker
@@ -239,6 +247,8 @@ async def tracker_upload(
         if flask_app:
             flask_app.current_total_count = 0
             flask_app.current_live_count = 0
+            flask_app.active_stream = str(temp_path)
+            flask_app.active_stream_session_id = getattr(flask_app, 'active_stream_session_id', 0) + 1
 
         # Return immediately so upload finishes in milliseconds without CPU bottleneck
         return {"success": True, "filename": safe_filename}
@@ -274,44 +284,40 @@ def stream_video_file(filename: str):
     import re
     clean_filename = urllib.parse.unquote(filename)
     sanitized_filename = re.sub(r'[^a-zA-Z0-9_.-]', '_', Path(clean_filename).name)
-    filepath = str(UPLOAD_DIR / clean_filename)
-    if not os.path.exists(filepath):
-        filepath = str(UPLOAD_DIR / sanitized_filename)
+    base_file = Path(clean_filename).name
 
-    if not os.path.exists(filepath):
-        # Fallback check relative to cwd, sample_videos, or root uploads
-        possible = [
-            os.path.abspath(os.path.join(os.path.dirname(__file__), "../../sample_videos", clean_filename)),
-            os.path.abspath(os.path.join(os.path.dirname(__file__), "../../sample_videos", sanitized_filename)),
-            os.path.abspath(os.path.join(os.path.dirname(__file__), "../../sample_videos", "DJI_20260911155924_0026_S.MP4")),
-            os.path.abspath(os.path.join("backend", "sample_videos", clean_filename)),
-            os.path.abspath(os.path.join("sample_videos", clean_filename)),
-            os.path.abspath(os.path.join("backend", "sample_videos", "DJI_20260911155924_0026_S.MP4")),
-            os.path.abspath(os.path.join("uploads", clean_filename)),
-            os.path.abspath(os.path.join("backend", "uploads", clean_filename)),
-            os.path.abspath(os.path.join("uploads", sanitized_filename)),
-            os.path.abspath(os.path.join("backend", "uploads", sanitized_filename)),
-            os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../uploads", clean_filename)),
-            os.path.abspath(os.path.join(os.path.dirname(__file__), "../../demo_hen_video.mp4")),
-            os.path.abspath(os.path.join(os.getcwd(), "demo_hen_video.mp4")),
-            os.path.abspath(os.path.join(os.getcwd(), "backend", "demo_hen_video.mp4")),
-        ]
-        found = next((p for p in possible if os.path.exists(p)), None)
-        if found:
-            filepath = found
-        else:
-            # Fallback to demo video or any available video to prevent 404 black screen on client
-            fallback_demos = [
-                os.path.abspath(os.path.join(os.path.dirname(__file__), "../../demo_hen_video.mp4")),
-                os.path.abspath(os.path.join(os.getcwd(), "demo_hen_video.mp4")),
-                os.path.abspath(os.path.join(os.getcwd(), "backend", "demo_hen_video.mp4")),
-            ]
-            demo_fallback = next((p for p in fallback_demos if os.path.exists(p)), None)
-            if demo_fallback:
-                print(f"[TRACKER] Notice: Video '{filename}' not found, falling back to: {demo_fallback}")
-                filepath = demo_fallback
-            else:
-                raise HTTPException(status_code=404, detail=f"Video '{filename}' not found on server")
+    search_dirs = [
+        UPLOAD_DIR,
+        PROJECT_ROOT / "backend" / "uploads",
+        PROJECT_ROOT / "uploads",
+        Path("uploads").resolve(),
+        Path("backend/uploads").resolve(),
+        PROJECT_ROOT / "backend" / "sample_videos",
+        PROJECT_ROOT / "sample_videos",
+        Path("backend/sample_videos").resolve(),
+        Path("sample_videos").resolve(),
+        PROJECT_ROOT,
+        PROJECT_ROOT / "backend",
+    ]
+
+    filepath = None
+    for d in search_dirs:
+        for fname in [clean_filename, sanitized_filename, base_file]:
+            p = d / fname
+            if p.exists() and p.is_file() and p.stat().st_size > 0:
+                filepath = str(p)
+                break
+        if filepath:
+            break
+
+    if not filepath or not os.path.exists(filepath):
+        if "demo" in clean_filename.lower():
+            for df in [PROJECT_ROOT / "demo_hen_video.mp4", PROJECT_ROOT / "backend" / "demo_hen_video.mp4"]:
+                if df.exists():
+                    filepath = str(df)
+                    break
+        if not filepath:
+            raise HTTPException(status_code=404, detail=f"Uploaded video '{filename}' not found on server")
 
     if not flask_app:
         raise HTTPException(status_code=500, detail="Video streaming module not available")
