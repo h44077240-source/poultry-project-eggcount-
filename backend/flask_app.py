@@ -296,7 +296,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
     NEW_HEN_MIN_DIST = 30.0  # Rejects duplicate boxes on the same hen
     MAX_LOST_MEMORY = 30  # Frame memory for lost hens before retirement
 
-    def extract_combs(f_img, conf_thresh=0.14, imgsz=None):
+    def extract_combs(f_img, conf_thresh=0.08, imgsz=None):
         if imgsz is None:
             imgsz = 352 if is_cloud else 640
         if active_model is None:
@@ -352,8 +352,8 @@ def _sync_generate_frames(video_source, ref_settings=None):
 
             # Balanced comb color mask: captures rich red, pale pink, and orange-red combs
             comb_mask = (
-                (((h_ch >= 145) | (h_ch <= 22)) & (s_ch > 18) & (v_ch > 25) & ((r_ch - g_ch) > 6)) |
-                (((r_ch - np.maximum(g_ch, b_ch)) > 7) & (s_ch > 18) & (v_ch > 28))
+                (((h_ch >= 135) | (h_ch <= 30)) & (s_ch > 10) & (v_ch > 18) & ((r_ch - g_ch) > 2)) |
+                (((r_ch - np.maximum(g_ch, b_ch)) > 3) & (s_ch > 8) & (v_ch > 20))
             )
 
             candidates = []
@@ -363,8 +363,8 @@ def _sync_generate_frames(video_source, ref_settings=None):
                     continue
 
                 aspect = bw / float(bh)
-                # Reject thin vertical wires (aspect < 0.38) or horizontal conveyor beams (aspect > 2.6)
-                if aspect < 0.38 or aspect > 2.6:
+                # Reject thin vertical wires or long horizontal beams
+                if aspect < 0.22 or aspect > 3.6:
                     continue
 
                 orig_x1 = max(0, min(in_w - 1, int(bx1)))
@@ -381,7 +381,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
                 comb_px = np.count_nonzero(crop)
 
                 # Color verification: reject non-red background/floor/wires for low-conf detections
-                if comb_px < 2 and conf < 0.30:
+                if comb_px < 1 and conf < 0.20:
                     continue
 
                 has_red = comb_px >= 3
@@ -409,7 +409,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
                     "conf": conf
                 })
 
-            # AGGRESSIVE DEDUPLICATION: ZERO duplicate boxes on the same hen head/comb
+            # Deduplication: merge only overlapping boxes on exact same comb (radius 18px or IoU > 0.38)
             candidates.sort(key=lambda d: d["conf"], reverse=True)
             dedup = []
             for d in candidates:
@@ -421,7 +421,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
                     b2 = ex["box"]
                     dist = math.hypot(c1[0] - c2[0], c1[1] - c2[1])
                     iou = compute_iou(b1, b2)
-                    if dist < 32.0 or iou > 0.15:
+                    if dist < 18.0 or iou > 0.38:
                         duplicate = True
                         break
                 if not duplicate:
@@ -449,7 +449,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
         pass
 
     try:
-        init_dets = extract_combs(sample_frame, conf_thresh=0.14, imgsz=352 if is_cloud else 640)
+        init_dets = extract_combs(sample_frame, conf_thresh=0.08, imgsz=352 if is_cloud else 640)
         init_in_zone = [d for d in init_dets if is_in_zone(d["center"][0], d["center"][1])]
         if OUT_W < OUT_H:
             init_in_zone.sort(key=lambda d: -d["center"][1])
@@ -622,10 +622,9 @@ def _sync_generate_frames(video_source, ref_settings=None):
                         hx, hy = h["center"]
                         dist = math.hypot(dcx - hx, dcy - hy)
                         iou = compute_iou(d["box"], h["box"])
-                        # Match strictly against CURRENT position (no stale home matching)
-                        # Prevents box from jumping across to adjacent hen's comb
-                        if dist <= 26.0 or (dist <= 32.0 and iou >= 0.18):
-                            cost = (1.0 - iou) * 0.4 + (dist / 26.0) * 0.6
+                        # Dynamic match distance (up to 38px or 48px if IoU overlap >= 0.12)
+                        if dist <= 38.0 or (dist <= 48.0 and iou >= 0.12):
+                            cost = (1.0 - iou) * 0.4 + (dist / 38.0) * 0.6
                             cands.append((cost, d_idx, hid))
 
                 cands.sort(key=lambda x: x[0])
@@ -654,7 +653,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
                     if hid not in used_hens:
                         hens[hid]["lost"] += 1
 
-                # Stage 2: Register New Hens entering the zone (Tentative confirmation eliminates all spurious 1-frame empty-space noise)
+                # Stage 2: Register New Hens entering the zone
                 updated_tentative = set()
                 for d_idx, d in enumerate(fresh):
                     if d_idx in matched_dets:
@@ -665,9 +664,9 @@ def _sync_generate_frames(video_source, ref_settings=None):
                     if not (12 <= dcx <= OUT_W - 12 and 12 <= dcy <= OUT_H - 12):
                         continue
 
-                    # Anti-duplicate: Do not register if close to any existing tracked hen (28px)
+                    # Anti-duplicate: Do not register if close to exact same tracked comb
                     is_near = any(
-                        math.hypot(dcx - h["center"][0], dcy - h["center"][1]) < 28.0 or compute_iou(d["box"], h["box"]) > 0.15
+                        math.hypot(dcx - h["center"][0], dcy - h["center"][1]) < 18.0 or compute_iou(d["box"], h["box"]) > 0.38
                         for h in hens.values() if h["lost"] <= 15
                     )
                     if is_near:
@@ -689,7 +688,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
                         t["lost"] = 0
                         t["center"] = d["center"]
                         t["box"] = list(d["box"])
-                        if t["hits"] >= 2:
+                        if t["hits"] >= 2 or d.get("conf", 0.0) >= 0.20:
                             # Confirmed genuine hen! Promote to permanent hen
                             hid = next_id
                             next_id += 1
@@ -739,7 +738,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
             # When a hen exits the screen, its box leaves the screen cleanly within 0.25s
             render_hens = [
                 hid for hid, h in hens.items()
-                if h["lost"] <= 6 and (8 <= h["center"][0] <= OUT_W - 8 and 8 <= h["center"][1] <= OUT_H - 8)
+                if h["lost"] <= 12 and (8 <= h["center"][0] <= OUT_W - 8 and 8 <= h["center"][1] <= OUT_H - 8)
             ]
             
             # Sort for stable rendering order
