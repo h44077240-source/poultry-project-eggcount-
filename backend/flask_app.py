@@ -289,14 +289,14 @@ def _sync_generate_frames(video_source, ref_settings=None):
         """Check if a comb center point is strictly inside the detection zone."""
         return ZONE_X1 <= cx <= ZONE_X2 and ZONE_Y1 <= cy <= ZONE_Y2
 
-    MAX_COMB_W = 180   # Maximum width for hen HEAD/COMB only (scaled for display)
-    MAX_COMB_H = 180   # Maximum height for hen HEAD/COMB only (scaled for display)
-    MIN_COMB_SZ = 4    # Minimum comb size (captures all hen combs clearly)
-    MATCH_RADIUS = 32.0  # Stable radius for tracking
-    NEW_HEN_MIN_DIST = 12.0  # Allows adjacent hens in flock / cages without suppression
-    MAX_LOST_MEMORY = 45  # Frame memory for lost hens before retirement
+    MAX_COMB_W = 140   # Maximum width for hen HEAD/COMB only (scaled for display)
+    MAX_COMB_H = 140   # Maximum height for hen HEAD/COMB only (scaled for display)
+    MIN_COMB_SZ = 6    # Minimum comb size (captures all hen combs clearly)
+    MATCH_RADIUS = 26.0  # Stable radius for tracking (prevents jumping to neighboring hen)
+    NEW_HEN_MIN_DIST = 28.0  # Rejects duplicate boxes on the same hen
+    MAX_LOST_MEMORY = 30  # Frame memory for lost hens before retirement
 
-    def extract_combs(f_img, conf_thresh=0.03, imgsz=None):
+    def extract_combs(f_img, conf_thresh=0.26, imgsz=None):
         if imgsz is None:
             imgsz = 352 if is_cloud else 640
         if active_model is None:
@@ -333,12 +333,12 @@ def _sync_generate_frames(video_source, ref_settings=None):
 
                 if not raw_boxes:
                     return []
-                indices = cv2.dnn.NMSBoxes(raw_boxes, raw_confs, score_threshold=conf_thresh, nms_threshold=0.35)
+                indices = cv2.dnn.NMSBoxes(raw_boxes, raw_confs, score_threshold=conf_thresh, nms_threshold=0.25)
                 idx_list = indices.flatten() if hasattr(indices, 'flatten') else indices
                 bx_list = [raw_boxes[i] for i in idx_list]
                 cf_list = [raw_confs[i] for i in idx_list]
             else:
-                res = active_model.predict(f_img, imgsz=imgsz, conf=conf_thresh, iou=0.35, verbose=False)[0]
+                res = active_model.predict(f_img, imgsz=imgsz, conf=conf_thresh, iou=0.25, verbose=False)[0]
                 if res.boxes is None or len(res.boxes) == 0:
                     return []
                 bx = res.boxes.xyxy.cpu().numpy()
@@ -358,7 +358,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
             candidates = []
             for b, conf in zip(bx_list, cf_list):
                 bx1, by1, bw, bh = float(b[0]), float(b[1]), float(b[2]), float(b[3])
-                if bw < 4 or bh < 4:
+                if bw < 6 or bh < 6 or bw > in_w * 0.35 or bh > in_h * 0.35:
                     continue
 
                 orig_x1 = max(0, min(in_w - 1, int(bx1)))
@@ -368,16 +368,24 @@ def _sync_generate_frames(video_source, ref_settings=None):
                 orig_y2 = max(0, min(in_h - 1, int(by1 + search_bh)))
 
                 crop = comb_mask[orig_y1:orig_y2, orig_x1:orig_x2]
-                has_red = np.count_nonzero(crop) >= 3
-                if has_red:
+                comb_px = np.count_nonzero(crop)
+
+                # STRICT FALSE POSITIVE SUPPRESSION:
+                # Combs are distinctly red/pinkish. Any candidate lacking red comb pixels (< 4)
+                # and without high model confidence (< 0.45) is rejected as floor/wire/feather noise!
+                if comb_px < 4 and conf < 0.45:
+                    continue
+                if comb_px < 2:
+                    continue
+
+                if comb_px >= 4:
                     ys, xs = np.where(crop)
                     cx = (orig_x1 + float(np.median(xs))) * scale_x_det
                     cy = (orig_y1 + float(np.median(ys))) * scale_y_det
                     cw = (np.percentile(xs, 95) - np.percentile(xs, 5)) * scale_x_det
                     ch = (np.percentile(ys, 95) - np.percentile(ys, 5)) * scale_y_det
-                    base_sz = max(16.0, min(34.0, max(cw, ch) + 4.0))
+                    base_sz = max(16.0, min(32.0, max(cw, ch) + 4.0))
                 else:
-                    # Centered on top of detection (comb/head) with snug size
                     cx = (orig_x1 + bw / 2.0) * scale_x_det
                     cy = (orig_y1 + min(bh * 0.30, 16.0)) * scale_y_det
                     bw_det = bw * scale_x_det
@@ -394,10 +402,22 @@ def _sync_generate_frames(video_source, ref_settings=None):
                     "conf": conf
                 })
 
+            # Strict Deduplication: ZERO duplicate boxes on the same hen head/comb
             candidates.sort(key=lambda d: d["conf"], reverse=True)
             dedup = []
             for d in candidates:
-                if not any(math.hypot(d["center"][0] - ex["center"][0], d["center"][1] - ex["center"][1]) < 10.0 for ex in dedup):
+                c1 = d["center"]
+                b1 = d["box"]
+                duplicate = False
+                for ex in dedup:
+                    c2 = ex["center"]
+                    b2 = ex["box"]
+                    dist = math.hypot(c1[0] - c2[0], c1[1] - c2[1])
+                    iou = compute_iou(b1, b2)
+                    if dist < 22.0 or iou > 0.16:
+                        duplicate = True
+                        break
+                if not duplicate:
                     dedup.append(d)
             return dedup
         except Exception:
@@ -406,7 +426,9 @@ def _sync_generate_frames(video_source, ref_settings=None):
     # Frame 0: Immediate comb seeding with ultra-fast ONNX model (< 200ms) on all environments
     disp0 = cv2.resize(sample_frame, (OUT_W, OUT_H), interpolation=cv2.INTER_LINEAR)
     hens = {}
+    tentative_hens = {}
     next_id = 1
+    next_tentative_id = 1
 
     # Instant Frame 0 yield so browser video shows up immediately (0.02s) without black screen wait
     try:
@@ -420,7 +442,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
         pass
 
     try:
-        init_dets = extract_combs(sample_frame, imgsz=352 if is_cloud else 640)
+        init_dets = extract_combs(sample_frame, conf_thresh=0.28, imgsz=352 if is_cloud else 640)
         init_in_zone = [d for d in init_dets if is_in_zone(d["center"][0], d["center"][1])]
         if OUT_W < OUT_H:
             init_in_zone.sort(key=lambda d: -d["center"][1])
@@ -432,7 +454,6 @@ def _sync_generate_frames(video_source, ref_settings=None):
             hens[hid] = {
                 "box": list(d["box"]),
                 "center": d["center"],
-                "home": d["center"],
                 "lost": 0,
                 "hits": 3
             }
@@ -554,11 +575,14 @@ def _sync_generate_frames(video_source, ref_settings=None):
                     if status[i][0] == 1:
                         dx = float(pts_out[i][0][0] - pts_in_arr[i][0][0])
                         dy = float(pts_out[i][0][1] - pts_in_arr[i][0][1])
-                        if abs(dx) < 22 and abs(dy) < 22:
+                        # Strict displacement clamp: Combs don't teleport > 9px per frame
+                        if abs(dx) < 9 and abs(dy) < 9:
                             hen_shifts[hid].append((dx, dy))
 
                 for hid, shifts in hen_shifts.items():
-                    if len(shifts) >= 1:
+                    # Only apply optical flow if track is fresh (< 4 frames lost)
+                    # Prevents lost box drifting across cages into another hen!
+                    if len(shifts) >= 1 and hens[hid]["lost"] <= 3:
                         mdx = float(np.median([s[0] for s in shifts]))
                         mdy = float(np.median([s[1] for s in shifts]))
                         b = hens[hid]["box"]
@@ -587,14 +611,16 @@ def _sync_generate_frames(video_source, ref_settings=None):
                 for d_idx, d in enumerate(fresh):
                     dcx, dcy = d["center"]
                     for hid, h in hens.items():
-                        if h["lost"] > 60:
+                        if h["lost"] > 25:
                             continue
                         hx, hy = h["center"]
-                        homx, homy = h.get("home", (hx, hy))
-                        dist = min(math.hypot(dcx - hx, dcy - hy), math.hypot(dcx - homx, dcy - homy))
+                        # STRICT PROXIMITY GATING:
+                        # Match ONLY against current position (NO stale home matching across cages!)
+                        dist = math.hypot(dcx - hx, dcy - hy)
                         iou = compute_iou(d["box"], h["box"])
-                        if dist <= 38.0 or iou > 0.12:
-                            cost = (1.0 - iou) * 0.4 + (dist / 38.0) * 0.6
+                        # Max match distance is 26px (prevents jumping to adjacent hen in next cage slot)
+                        if dist <= 26.0 or (iou >= 0.22 and dist <= 36.0):
+                            cost = (1.0 - iou) * 0.4 + (dist / 26.0) * 0.6
                             cands.append((cost, d_idx, hid))
 
                 cands.sort(key=lambda x: x[0])
@@ -623,7 +649,9 @@ def _sync_generate_frames(video_source, ref_settings=None):
                     if hid not in used_hens:
                         hens[hid]["lost"] += 1
 
-                # Stage 2: Register New Hens entering the zone (Unique IDs, zero repeats!)
+                # Stage 2: Register New Hens entering the zone (Multi-frame verification)
+                # Eliminates duplicate boxes on same hen and prevents 1-frame spurious boxes!
+                updated_tids = set()
                 for d_idx, d in enumerate(fresh):
                     if d_idx in matched_dets:
                         continue
@@ -633,21 +661,58 @@ def _sync_generate_frames(video_source, ref_settings=None):
                     if not (12 <= dcx <= OUT_W - 12 and 12 <= dcy <= OUT_H - 12):
                         continue
 
+                    # Strict proximity check against active or recently lost hens:
+                    # NEVER spawn duplicate box on the same hen!
                     is_near = any(
-                        min(math.hypot(dcx - h["center"][0], dcy - h["center"][1]),
-                            math.hypot(dcx - h.get("home", h["center"])[0], dcy - h.get("home", h["center"])[1])) < 22.0
+                        math.hypot(dcx - h["center"][0], dcy - h["center"][1]) < 28.0 or
+                        compute_iou(d["box"], h["box"]) > 0.15
                         for h in hens.values() if h["lost"] <= 20
                     )
-                    if not is_near:
-                        hid = next_id
-                        next_id += 1
-                        hens[hid] = {
+                    if is_near:
+                        continue
+
+                    # Tentative 2-cycle confirmation
+                    matched_tid = None
+                    best_t_dist = 24.0
+                    for tid, tdata in tentative_hens.items():
+                        tdist = math.hypot(dcx - tdata["center"][0], dcy - tdata["center"][1])
+                        if tdist < best_t_dist:
+                            best_t_dist = tdist
+                            matched_tid = tid
+
+                    if matched_tid is not None:
+                        updated_tids.add(matched_tid)
+                        t = tentative_hens[matched_tid]
+                        t["hits"] += 1
+                        t["lost"] = 0
+                        t["center"] = (dcx, dcy)
+                        t["box"] = list(d["box"])
+                        if t["hits"] >= 2:
+                            hid = next_id
+                            next_id += 1
+                            hens[hid] = {
+                                "box": list(d["box"]),
+                                "center": d["center"],
+                                "lost": 0,
+                                "hits": t["hits"]
+                            }
+                            del tentative_hens[matched_tid]
+                    else:
+                        tentative_hens[next_tentative_id] = {
                             "box": list(d["box"]),
                             "center": d["center"],
-                            "home": d["center"],
-                            "lost": 0,
-                            "hits": 1
+                            "hits": 1,
+                            "lost": 0
                         }
+                        updated_tids.add(next_tentative_id)
+                        next_tentative_id += 1
+
+                # Clean up unconfirmed tentative noise
+                for tid in list(tentative_hens.keys()):
+                    if tid not in updated_tids:
+                        tentative_hens[tid]["lost"] += 1
+                        if tentative_hens[tid]["lost"] >= 2:
+                            del tentative_hens[tid]
 
             # 3. Dispatch current crisp frame to AI worker (throttled to avoid CPU thrashing)
             ai_interval = 4 if os.environ.get("RENDER") == "true" else 3
