@@ -1776,15 +1776,39 @@ export default function EggCounterPage() {
               {/* Preview images for Dual AI */}
               {mode === 'dual_ai' && (topPreviewUrl || sidePreviewUrl) && (
                 <div style={{ marginTop: 16, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                  {openaiResult && (openaiResult as any).num_stacks !== undefined && (
+                    <div style={{
+                      gridColumn: '1 / -1',
+                      padding: '12px 18px',
+                      borderRadius: 10,
+                      background: 'rgba(16, 185, 129, 0.12)',
+                      border: '1.5px solid rgba(16, 185, 129, 0.4)',
+                      color: '#059669',
+                      fontWeight: 700,
+                      fontSize: '1rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 8,
+                      textAlign: 'center'
+                    }}>
+                      <span>✨ ML Dual View: {(openaiResult as any).num_stacks} Stacks (Top) × {(openaiResult as any).stack_height} Layers (Side) = {openaiResult.tray_count} Trays ({openaiResult.egg_count} Eggs)</span>
+                    </div>
+                  )}
                   {topPreviewUrl && (
                     <div>
-                      <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: 8 }}>Top View Image</div>
+                      <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span>Top View {(openaiResult as any)?.top_annotated_image ? 'AI Detections (Stacks)' : 'Image'}</span>
+                        {(openaiResult as any)?.num_stacks !== undefined && (
+                          <span style={{ color: '#10b981', fontWeight: 600 }}>{(openaiResult as any).num_stacks} Stacks</span>
+                        )}
+                      </div>
                       <img
-                        src={topPreviewUrl}
+                        src={(openaiResult as any)?.top_annotated_image || topPreviewUrl}
                         alt="Top View"
                         style={{
                           width: '100%',
-                          maxHeight: 250,
+                          maxHeight: 280,
                           objectFit: 'contain',
                           borderRadius: 8,
                           border: '1px solid var(--border-subtle)',
@@ -1794,13 +1818,18 @@ export default function EggCounterPage() {
                   )}
                   {sidePreviewUrl && (
                     <div>
-                      <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: 8 }}>Side View Image</div>
+                      <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span>Side View {(openaiResult as any)?.side_annotated_image ? 'AI Detections (Layers)' : 'Image'}</span>
+                        {(openaiResult as any)?.stack_height !== undefined && (
+                          <span style={{ color: '#10b981', fontWeight: 600 }}>{(openaiResult as any).stack_height} Layers</span>
+                        )}
+                      </div>
                       <img
-                        src={sidePreviewUrl}
+                        src={(openaiResult as any)?.side_annotated_image || sidePreviewUrl}
                         alt="Side View"
                         style={{
                           width: '100%',
-                          maxHeight: 250,
+                          maxHeight: 280,
                           objectFit: 'contain',
                           borderRadius: 8,
                           border: '1px solid var(--border-subtle)',

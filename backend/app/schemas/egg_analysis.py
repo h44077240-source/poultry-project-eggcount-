@@ -33,6 +33,12 @@ class EggAnalysisResponse(BaseModel):
         description="Overall visual quality of the uploaded image",
     )
     notes: str = Field(default="", description="Brief explanation of findings or uncertainty")
+    annotated_image: Optional[str] = Field(default=None, description="Base64 encoded annotated image with bounding boxes")
+    top_annotated_image: Optional[str] = Field(default=None, description="Base64 encoded top-view annotated image")
+    side_annotated_image: Optional[str] = Field(default=None, description="Base64 encoded side-view annotated image")
+    num_stacks: Optional[int] = Field(default=None, description="Number of stacks detected in top view")
+    stack_height: Optional[int] = Field(default=None, description="Max stack height detected in side view")
+    col_heights: Optional[list] = Field(default=None, description="List of detected column layer heights")
 
 
 class ChatAnalyzeResponse(BaseModel):

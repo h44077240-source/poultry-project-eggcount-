@@ -524,33 +524,21 @@ async def analyze_dual_egg_images(
         )
 
     try:
-        from app.ai.detector_interface import get_detector
-        detector = get_detector()
-        analysis = detector.analyze_dual(top_image_bytes, side_image_bytes, top_content_type, side_content_type, target)
-        
-        # Override calculation if user selected trays and model missed it
-        if target == "trays" and analysis.get("success"):
-            analysis["egg_count"] = analysis.get("tray_count", 0) * 30
-            
+        from app.ai.egg_tray_service import analyze_dual_egg_trays
+        analysis = analyze_dual_egg_trays(top_image_bytes, side_image_bytes)
         return EggAnalysisResponse(**analysis)
-    except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc))
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=f"Unable to process AI response: {exc}")
     except Exception as exc:
+        logger.warning("Dedicated egg tray YOLO dual analysis notice: %s. Trying detector fallback...", exc)
         try:
-            from app.ai.yolo_detector import CustomYOLODetector
-            fallback_detector = CustomYOLODetector()
-            analysis = fallback_detector.analyze(image_bytes, content_type, target)
+            from app.ai.detector_interface import get_detector
+            detector = get_detector()
+            analysis = detector.analyze_dual(top_image_bytes, side_image_bytes, top_content_type, side_content_type, target)
+            if target == "trays" and analysis.get("success"):
+                analysis["egg_count"] = analysis.get("tray_count", 0) * 30
             return EggAnalysisResponse(**analysis)
-        except Exception:
-            pass
-        import traceback
-        traceback.print_exc()
-        err_msg = str(exc).lower()
-        if "rate limit" in err_msg or "quota" in err_msg or "429" in err_msg:
-            raise HTTPException(status_code=429, detail="API rate limit reached. Please wait a moment.")
-        raise HTTPException(status_code=502, detail="Unable to analyze images. Please upload clearer photos.")
+        except Exception as fallback_exc:
+            logger.error("Dual egg analysis fallback failed: %s", fallback_exc, exc_info=True)
+            raise HTTPException(status_code=502, detail=f"Unable to analyze dual images: {str(exc)}")
 
 
 @router.post("/chat-analyze", tags=["Egg Counting"])

@@ -73,45 +73,33 @@ class CustomYOLODetector(ImageDetector):
             
     def analyze_dual(self, top_image_bytes: bytes, side_image_bytes: bytes, mime_type_top: str = "image/jpeg", mime_type_side: str = "image/jpeg", target: str = "trays") -> dict:
         """
-        Analyze dual images (top view and side view) using the trained YOLO model.
-        Top view gives the number of stacks, while side view gives the layers per stack.
+        Analyze dual images (top view and side view) using the dedicated egg tray YOLO model.
+        Ported from Egg_Inventory_Project (egg_app.py).
         """
         try:
-            top_results = detect_objects(top_image_bytes, conf_threshold=0.20)
-            side_results = detect_objects(side_image_bytes, conf_threshold=0.20)
-            
-            top_trays = top_results.get("tray_count", 0)
-            side_trays = side_results.get("tray_count", 0)
-            
-            if top_trays > 0 and side_trays > 0:
-                tray_count = top_trays * side_trays
-            elif top_trays > 0:
-                tray_count = top_trays
-            elif side_trays > 0:
-                tray_count = side_trays
-            else:
-                tray_count = 0
-                
-            egg_count = tray_count * 30
-            expected_eggs = egg_count
-            
-            return {
-                "success": True,
-                "egg_count": egg_count,
-                "tray_count": tray_count,
-                "expected_egg_count": expected_eggs,
-                "missing_egg_count": 0,
-                "hen_count": 0,
-                "tray_types": {
-                    "green_plastic": tray_count,
-                    "paper_cardboard": 0,
-                    "other": 0,
-                    "unknown": 0
-                },
-                "confidence": "high" if tray_count > 0 else "medium",
-                "image_quality": "good",
-                "notes": f"Dual image analysis: Top view detected {top_trays} stack(s), Side view detected {side_trays} tray layer(s). Total: {tray_count} trays ({egg_count} eggs)."
-            }
+            from app.ai.egg_tray_service import analyze_dual_egg_trays
+            return analyze_dual_egg_trays(top_image_bytes, side_image_bytes)
         except Exception as exc:
             logger.error("YOLO dual detection error: %s", exc, exc_info=True)
-            raise
+            # Fallback to generic detect_objects if dedicated dual pipeline encounters unexpected error
+            try:
+                top_results = detect_objects(top_image_bytes, conf_threshold=0.20)
+                side_results = detect_objects(side_image_bytes, conf_threshold=0.20)
+                top_trays = top_results.get("tray_count", 0)
+                side_trays = side_results.get("tray_count", 0)
+                tray_count = (top_trays * side_trays) if (top_trays > 0 and side_trays > 0) else max(top_trays, side_trays)
+                egg_count = tray_count * 30
+                return {
+                    "success": True,
+                    "egg_count": egg_count,
+                    "tray_count": tray_count,
+                    "expected_egg_count": egg_count,
+                    "missing_egg_count": 0,
+                    "hen_count": 0,
+                    "tray_types": {"green_plastic": tray_count, "paper_cardboard": 0, "other": 0, "unknown": 0},
+                    "confidence": "medium",
+                    "image_quality": "fair",
+                    "notes": f"Fallback dual analysis: Top view {top_trays} stack(s), Side view {side_trays} layer(s). Total: {tray_count} trays ({egg_count} eggs)."
+                }
+            except Exception:
+                raise exc
