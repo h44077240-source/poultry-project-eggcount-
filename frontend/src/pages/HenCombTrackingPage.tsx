@@ -334,6 +334,8 @@ export default function HenCombTrackingPage() {
     setErrorMsg(null)
     setActiveLoadingCard(null)
     setIsProcessing(false)
+    setUploadProgress(null)
+    setUploadStatusText(null)
     setShowUploadChoiceModal(false)
     setPendingVideoFile(null)
 
@@ -490,12 +492,15 @@ export default function HenCombTrackingPage() {
 
     stopLiveCamera()
     setErrorMsg(null)
-    setActiveLoadingCard(cardType)
+    setActiveLoadingCard(null)
+    setIsProcessing(false)
     setPendingVideoFile(file)
     setShowUploadChoiceModal(false)
+    setUploadProgress(null)
+    setUploadStatusText(null)
 
-    // Always upload the user's actual selected video file so their exact video runs!
-    startCloudUpload(file)
+    // Instant local playback with ZERO upload wait, ZERO loading spinner screen (plays in 0.01s)!
+    startInstantLocalPlayback(file)
     if (e.target) e.target.value = ''
   }
 
@@ -694,11 +699,11 @@ export default function HenCombTrackingPage() {
         const blob = new Blob(recordedChunksRef.current, { type: mimeType })
         if (blob.size === 0) return
         stopLiveCamera()
-        setIsProcessing(true)
+        setIsProcessing(false)
         setErrorMsg(null)
         const ext = mimeType.includes('mp4') ? 'mp4' : 'webm'
         const file = new File([blob], `live_camera_recorded_${Date.now()}.${ext}`, { type: mimeType })
-        startCloudUpload(file)
+        startInstantLocalPlayback(file)
       }
       recorder.start(500)
       mediaRecorderRef.current = recorder
@@ -2249,12 +2254,16 @@ export default function HenCombTrackingPage() {
                     type="button"
                     onClick={() => {
                       if (xhrRef.current) xhrRef.current.abort();
-                      const activeBackendUrl = getTrackerBaseUrl();
                       setIsProcessing(false);
                       setUploadProgress(null);
                       setUploadStatusText(null);
-                      setStreamUrl(`${activeBackendUrl}/stream_video/DJI_20260911155924_0026_S.MP4?t=${Date.now()}`);
-                      setStreamMode('video');
+                      if (pendingVideoFile) {
+                        startInstantLocalPlayback(pendingVideoFile);
+                      } else {
+                        const activeBackendUrl = getTrackerBaseUrl();
+                        setStreamUrl(`${activeBackendUrl}/stream_video/demo_hen_video.mp4?t=${Date.now()}`);
+                        setStreamMode('video');
+                      }
                     }}
                     style={{
                       marginTop: 4,
@@ -2268,7 +2277,7 @@ export default function HenCombTrackingPage() {
                       cursor: 'pointer'
                     }}
                   >
-                    ⚡ Skip Upload & Play Pre-loaded Video Instantly
+                    ⚡ Play Video Instantly
                   </button>
                 </div>
               )}
