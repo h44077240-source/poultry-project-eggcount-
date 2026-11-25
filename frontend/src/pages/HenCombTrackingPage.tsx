@@ -494,8 +494,9 @@ export default function HenCombTrackingPage() {
     setPendingVideoFile(file)
     setShowUploadChoiceModal(false)
 
-    // Always upload the user's actual selected video file so their exact video runs!
-    startCloudUpload(file)
+    // Instantly play the exact selected video locally with 0s wait time!
+    // No slow 100MB uploading bar, no server timeout, and never plays default video!
+    startInstantLocalPlayback(file)
     if (e.target) e.target.value = ''
   }
 
@@ -1030,7 +1031,7 @@ export default function HenCombTrackingPage() {
       const maxAreaRatio = 0.085
       if (wRatio > maxWRatio || hRatio > maxHRatio || (wRatio * hRatio) > maxAreaRatio) continue
       const aspect = width / Math.max(height, 1)
-      if (aspect < 0.20 || aspect > 2.80) continue
+      if (aspect < 0.10 || aspect > 4.5) continue
       // Skip if off-screen in cover mode
       if (x + width < 0 || x > cw || y + height < 0 || y > ch) continue
 
