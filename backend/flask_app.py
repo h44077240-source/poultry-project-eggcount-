@@ -296,7 +296,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
     NEW_HEN_MIN_DIST = 30.0  # Rejects duplicate boxes on the same hen
     MAX_LOST_MEMORY = 30  # Frame memory for lost hens before retirement
 
-    def extract_combs(f_img, conf_thresh=0.025, imgsz=None):
+    def extract_combs(f_img, conf_thresh=0.04, imgsz=None):
         if imgsz is None:
             imgsz = 640
         if active_model is None:
@@ -332,13 +332,13 @@ def _sync_generate_frames(video_source, ref_settings=None):
 
                 if not raw_boxes:
                     return []
-                # High-recall NMS threshold 0.70 so perspective-adjacent hen combs are retained
-                indices = cv2.dnn.NMSBoxes(raw_boxes, raw_confs, score_threshold=conf_thresh, nms_threshold=0.70)
+                # Balanced NMS threshold 0.55 so adjacent distinct hen combs are not deleted
+                indices = cv2.dnn.NMSBoxes(raw_boxes, raw_confs, score_threshold=conf_thresh, nms_threshold=0.55)
                 idx_list = indices.flatten() if hasattr(indices, 'flatten') else indices
                 bx_list = [raw_boxes[i] for i in idx_list]
                 cf_list = [raw_confs[i] for i in idx_list]
             else:
-                res = active_model.predict(f_img, imgsz=imgsz, conf=conf_thresh, iou=0.70, verbose=False)[0]
+                res = active_model.predict(f_img, imgsz=imgsz, conf=conf_thresh, iou=0.55, verbose=False)[0]
                 if res.boxes is None or len(res.boxes) == 0:
                     return []
                 bx = res.boxes.xyxy.cpu().numpy()
@@ -352,20 +352,20 @@ def _sync_generate_frames(video_source, ref_settings=None):
 
             # Balanced comb color mask: captures rich red, pale pink, and orange-red combs
             comb_mask = (
-                (((h_ch >= 125) | (h_ch <= 42)) & (s_ch > 4) & (v_ch > 10) & ((r_ch - g_ch) > -4)) |
-                (((r_ch - np.maximum(g_ch, b_ch)) > -2) & (s_ch > 3) & (v_ch > 10)) |
-                ((r_ch > 35) & (r_ch > g_ch - 5) & (r_ch > b_ch - 5))
+                (((h_ch >= 130) | (h_ch <= 38)) & (s_ch > 5) & (v_ch > 12) & ((r_ch - g_ch) > -2)) |
+                (((r_ch - np.maximum(g_ch, b_ch)) > 0) & (s_ch > 4) & (v_ch > 12)) |
+                ((r_ch > 45) & (r_ch > g_ch) & (r_ch > b_ch))
             )
 
             candidates = []
             for b, conf in zip(bx_list, cf_list):
                 bx1, by1, bw, bh = float(b[0]), float(b[1]), float(b[2]), float(b[3])
-                if bw < 3 or bh < 3 or bw > in_w * 0.55 or bh > in_h * 0.55:
+                if bw < 4 or bh < 4 or bw > in_w * 0.35 or bh > in_h * 0.35:
                     continue
 
                 aspect = bw / float(bh)
                 # Reject thin vertical wires or long horizontal beams
-                if aspect < 0.12 or aspect > 5.0:
+                if aspect < 0.15 or aspect > 4.2:
                     continue
 
                 orig_x1 = max(0, min(in_w - 1, int(bx1)))
@@ -373,29 +373,33 @@ def _sync_generate_frames(video_source, ref_settings=None):
                 orig_x2 = max(0, min(in_w - 1, int(bx1 + bw)))
                 orig_y2 = max(0, min(in_h - 1, int(by1 + bh)))
 
+                # Edge artifacts rejection
+                if (orig_x1 <= 2 or orig_x2 >= in_w - 2) and conf < 0.28:
+                    continue
+
                 crop = comb_mask[orig_y1:orig_y2, orig_x1:orig_x2]
                 comb_px = np.count_nonzero(crop)
 
-                # Color verification only for ultra-low conf
-                if comb_px < 1 and conf < 0.05:
+                # Color verification: reject non-red background/floor/wires for low-conf detections
+                if comb_px < 1 and conf < 0.08:
                     continue
 
-                has_red = comb_px >= 1
+                has_red = comb_px >= 2
                 if has_red:
                     ys, xs = np.where(crop)
                     cx = (orig_x1 + float(np.median(xs))) * scale_x_det
                     cy = (orig_y1 + float(np.median(ys))) * scale_y_det
                     cw = (np.percentile(xs, 95) - np.percentile(xs, 5)) * scale_x_det
                     ch = (np.percentile(ys, 95) - np.percentile(ys, 5)) * scale_y_det
-                    base_sz = max(12.0, min(36.0, max(cw, ch) + 4.0))
+                    base_sz = max(14.0, min(34.0, max(cw, ch) + 4.0))
                 else:
                     cx = (orig_x1 + bw / 2.0) * scale_x_det
                     cy = (orig_y1 + min(bh * 0.30, 16.0)) * scale_y_det
                     bw_det = bw * scale_x_det
                     bh_det = bh * scale_y_det
-                    base_sz = max(12.0, min(34.0, max(bw_det * 0.5, bh_det * 0.5)))
+                    base_sz = max(14.0, min(32.0, max(bw_det * 0.5, bh_det * 0.5)))
 
-                if cy <= 2 or cy >= OUT_H - 2 or cx <= 2 or cx >= OUT_W - 2:
+                if cy <= 4 or cy >= OUT_H - 4 or cx <= 4 or cx >= OUT_W - 4:
                     continue
 
                 hw, hh = base_sz / 2.0, base_sz / 2.0
@@ -405,7 +409,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
                     "conf": conf
                 })
 
-            # Deduplication: merge only overlapping boxes on exact same comb (radius 8px)
+            # Deduplication: merge only overlapping boxes on exact same comb (radius 9px or IoU > 0.60)
             candidates.sort(key=lambda d: d["conf"], reverse=True)
             dedup = []
             for d in candidates:
@@ -416,7 +420,8 @@ def _sync_generate_frames(video_source, ref_settings=None):
                     c2 = ex["center"]
                     b2 = ex["box"]
                     dist = math.hypot(c1[0] - c2[0], c1[1] - c2[1])
-                    if dist < 8.0:
+                    iou = compute_iou(b1, b2)
+                    if dist < 9.0 or iou > 0.60:
                         duplicate = True
                         break
                 if not duplicate:
@@ -444,7 +449,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
         pass
 
     try:
-        init_dets = extract_combs(sample_frame, conf_thresh=0.025, imgsz=640)
+        init_dets = extract_combs(sample_frame, conf_thresh=0.06, imgsz=640)
         init_in_zone = [d for d in init_dets if is_in_zone(d["center"][0], d["center"][1])]
         if OUT_W < OUT_H:
             init_in_zone.sort(key=lambda d: -d["center"][1])
@@ -656,12 +661,12 @@ def _sync_generate_frames(video_source, ref_settings=None):
                     dcx, dcy = d["center"]
                     if not is_in_zone(dcx, dcy):
                         continue
-                    if not (2 <= dcx <= OUT_W - 2 and 2 <= dcy <= OUT_H - 2):
+                    if not (12 <= dcx <= OUT_W - 12 and 12 <= dcy <= OUT_H - 12):
                         continue
 
                     # Anti-duplicate: Do not register if close to exact same tracked comb
                     is_near = any(
-                        math.hypot(dcx - h["center"][0], dcy - h["center"][1]) < 8.0 or compute_iou(d["box"], h["box"]) > 0.65
+                        math.hypot(dcx - h["center"][0], dcy - h["center"][1]) < 14.0 or compute_iou(d["box"], h["box"]) > 0.48
                         for h in hens.values() if h["lost"] <= 15
                     )
                     if is_near:
@@ -683,7 +688,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
                         t["lost"] = 0
                         t["center"] = d["center"]
                         t["box"] = list(d["box"])
-                        if t["hits"] >= 2 or d.get("conf", 0.0) >= 0.06:
+                        if t["hits"] >= 2 or d.get("conf", 0.0) >= 0.12:
                             # Confirmed genuine hen! Promote to permanent hen
                             hid = next_id
                             next_id += 1
@@ -695,31 +700,21 @@ def _sync_generate_frames(video_source, ref_settings=None):
                             }
                             del tentative_hens[best_tid]
                     else:
-                        if d.get("conf", 0.0) >= 0.08:
-                            hid = next_id
-                            next_id += 1
-                            hens[hid] = {
-                                "box": list(d["box"]),
-                                "center": d["center"],
-                                "lost": 0,
-                                "hits": 1
-                            }
-                        else:
-                            tid = next_tentative_id
-                            next_tentative_id += 1
-                            tentative_hens[tid] = {
-                                "box": list(d["box"]),
-                                "center": d["center"],
-                                "lost": 0,
-                                "hits": 1
-                            }
-                            updated_tentative.add(tid)
+                        tid = next_tentative_id
+                        next_tentative_id += 1
+                        tentative_hens[tid] = {
+                            "box": list(d["box"]),
+                            "center": d["center"],
+                            "lost": 0,
+                            "hits": 1
+                        }
+                        updated_tentative.add(tid)
 
                 # Clean tentative tracks that don't get confirmed
                 for tid in list(tentative_hens.keys()):
                     if tid not in updated_tentative:
                         tentative_hens[tid]["lost"] += 1
-                        if tentative_hens[tid]["lost"] >= 8:
+                        if tentative_hens[tid]["lost"] >= 2:
                             del tentative_hens[tid]
 
             # 3. Dispatch current crisp frame to AI worker (throttled to avoid CPU thrashing)
@@ -733,9 +728,9 @@ def _sync_generate_frames(video_source, ref_settings=None):
             for hid in list(hens.keys()):
                 b = hens[hid]["box"]
                 cx, cy = hens[hid]["center"]
-                exited_screen = (cx < 4 or cx > OUT_W - 4 or cy < 4 or cy > OUT_H - 4 or
-                                 b[2] < 2 or b[0] > OUT_W - 2 or b[3] < 2 or b[1] > OUT_H - 2)
-                lost_too_long = hens[hid]["lost"] > 25
+                exited_screen = (cx < 8 or cx > OUT_W - 8 or cy < 8 or cy > OUT_H - 8 or
+                                 b[2] < 5 or b[0] > OUT_W - 5 or b[3] < 5 or b[1] > OUT_H - 5)
+                lost_too_long = hens[hid]["lost"] > 20
                 if exited_screen or lost_too_long:
                     del hens[hid]
 
@@ -743,7 +738,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
             # When a hen exits the screen, its box leaves the screen cleanly within 0.25s
             render_hens = [
                 hid for hid, h in hens.items()
-                if h["lost"] <= 24 and (2 <= h["center"][0] <= OUT_W - 2 and 2 <= h["center"][1] <= OUT_H - 2)
+                if h["lost"] <= 12 and (8 <= h["center"][0] <= OUT_W - 8 and 8 <= h["center"][1] <= OUT_H - 8)
             ]
             
             # Sort for stable rendering order
