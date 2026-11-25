@@ -110,7 +110,7 @@ def get_tracking_model():
         try:
             import onnxruntime as ort
             sess_opts = ort.SessionOptions()
-            sess_opts.intra_op_num_threads = 2
+            sess_opts.intra_op_num_threads = min(4, os.cpu_count() or 2)
             sess_opts.inter_op_num_threads = 1
             sess_opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
             ort_session = ort.InferenceSession(MODEL_PATH, sess_opts, providers=['CPUExecutionProvider'])
@@ -501,7 +501,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
                     ai_results = fresh_dets
             except Exception:
                 pass
-            time.sleep(0.04 if os.environ.get("RENDER") == "true" else 0.02)
+            time.sleep(0.005)
 
     ai_worker_thread = threading.Thread(target=ai_worker_proc, daemon=True)
     ai_worker_thread.start()
@@ -688,7 +688,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
                         t["lost"] = 0
                         t["center"] = d["center"]
                         t["box"] = list(d["box"])
-                        if t["hits"] >= 2 or d.get("conf", 0.0) >= 0.12:
+                        if t["hits"] >= 2 or d.get("conf", 0.0) >= 0.08:
                             # Confirmed genuine hen! Promote to permanent hen
                             hid = next_id
                             next_id += 1
@@ -714,15 +714,13 @@ def _sync_generate_frames(video_source, ref_settings=None):
                 for tid in list(tentative_hens.keys()):
                     if tid not in updated_tentative:
                         tentative_hens[tid]["lost"] += 1
-                        if tentative_hens[tid]["lost"] >= 2:
+                        if tentative_hens[tid]["lost"] >= 4:
                             del tentative_hens[tid]
 
-            # 3. Dispatch current crisp frame to AI worker (throttled to avoid CPU thrashing)
-            ai_interval = 4 if os.environ.get("RENDER") == "true" else 3
-            if f_idx % ai_interval == 0:
-                with ai_lock:
-                    if ai_frame is None:
-                        ai_frame = frame.copy()
+            # 3. Dispatch current crisp frame to AI worker whenever available
+            with ai_lock:
+                if ai_frame is None:
+                    ai_frame = frame.copy()
 
             # 4. Clean retirement: When a hen exits the screen, its box MUST leave the screen cleanly!
             for hid in list(hens.keys()):
