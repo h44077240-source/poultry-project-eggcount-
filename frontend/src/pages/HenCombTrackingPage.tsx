@@ -42,6 +42,14 @@ export default function HenCombTrackingPage() {
   const recordedChunksRef = useRef<Blob[]>([])
   const recordingTimerRef = useRef<any>(null)
   const xhrRef = useRef<XMLHttpRequest | null>(null)
+  const bgVideoRef = useRef<HTMLVideoElement | null>(null)
+
+  useEffect(() => {
+    if (bgVideoRef.current) {
+      bgVideoRef.current.muted = true
+      bgVideoRef.current.play().catch(() => {})
+    }
+  }, [])
 
   // Live Camera WebRTC & Canvas refs
   const videoRef = useRef<HTMLVideoElement | null>(null)
@@ -1464,6 +1472,7 @@ export default function HenCombTrackingPage() {
         }}
       >
         <video
+          ref={bgVideoRef}
           autoPlay
           loop
           muted

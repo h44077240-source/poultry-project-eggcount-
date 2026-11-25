@@ -161,7 +161,8 @@ async def health():
 
 
 # ─── Static Frontend Serving (SPA) ──────────────────────────────────────────
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse, Response
+import re
 
 root_dir = Path(__file__).resolve().parent.parent.parent
 possible_dirs = [
@@ -170,6 +171,50 @@ possible_dirs = [
     root_dir / "dist",
 ]
 static_dir = next((d for d in possible_dirs if d.exists() and (d / "index.html").exists()), None)
+
+MEDIA_EXTENSIONS = {
+    ".mp4", ".webm", ".ogg", ".mp3", ".wav",
+    ".jpg", ".jpeg", ".png", ".gif", ".svg", ".ico", ".webp",
+    ".css", ".js", ".mjs", ".map", ".json",
+    ".woff", ".woff2", ".ttf", ".eot"
+}
+
+def stream_file_with_range(path: Path, request: Request, media_type: str = "video/mp4"):
+    file_size = path.stat().st_size
+    range_header = request.headers.get("range")
+    if not range_header:
+        return FileResponse(str(path), media_type=media_type)
+    
+    range_match = re.search(r"bytes=(\d+)-(\d*)", range_header)
+    if not range_match:
+        return FileResponse(str(path), media_type=media_type)
+    
+    start = int(range_match.group(1))
+    end = int(range_match.group(2)) if range_match.group(2) else file_size - 1
+    if start >= file_size or end >= file_size or start > end:
+        return Response(status_code=416, headers={"Content-Range": f"bytes */{file_size}"})
+    
+    chunk_size = (end - start) + 1
+    
+    def file_iterator():
+        with open(path, "rb") as f:
+            f.seek(start)
+            remaining = chunk_size
+            while remaining > 0:
+                read_len = min(64 * 1024, remaining)
+                data = f.read(read_len)
+                if not data:
+                    break
+                remaining -= len(data)
+                yield data
+
+    headers = {
+        "Content-Range": f"bytes {start}-{end}/{file_size}",
+        "Accept-Ranges": "bytes",
+        "Content-Length": str(chunk_size),
+        "Content-Type": media_type,
+    }
+    return StreamingResponse(file_iterator(), status_code=206, headers=headers)
 
 if static_dir and (static_dir / "index.html").exists():
     if (static_dir / "assets").exists():
@@ -187,7 +232,16 @@ if static_dir and (static_dir / "index.html").exists():
         
         target = static_dir / full_path
         if target.is_file():
+            ext = target.suffix.lower()
+            if ext in {".mp4", ".webm"}:
+                return stream_file_with_range(target, request, media_type=f"video/{ext[1:]}")
             return FileResponse(str(target))
+
+        # If a specific static asset with known extension was requested but doesn't exist, return 404 (do not return index.html)
+        req_ext = Path(full_path).suffix.lower()
+        if req_ext in MEDIA_EXTENSIONS:
+            return Response(status_code=404, content=f"Asset {full_path} not found", media_type="text/plain")
+
         index = static_dir / "index.html"
         if index.is_file():
             return FileResponse(str(index))

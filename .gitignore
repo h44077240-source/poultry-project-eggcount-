@@ -99,10 +99,16 @@ logs/
 !backend/demo_hen_video.mp4
 !backend/sample_videos/**
 !backend/sample_videos/*
+!backend/static/real_white_hens_bg.mp4
+!frontend/public/real_white_hens_bg.mp4
+!dist/real_white_hens_bg.mp4
 uploads/
 frame_snapshots/
 processed/
 *.jpg
+!backend/static/*.jpg
+!frontend/public/*.jpg
+!dist/*.jpg
 *.mjs
 scratch/
 **/ledger_data.json
