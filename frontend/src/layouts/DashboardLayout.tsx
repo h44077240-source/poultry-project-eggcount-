@@ -72,38 +72,25 @@ export default function DashboardLayout() {
               <span>AI Engine Active</span>
             </div>
 
-            {/* Theme Toggle Pill Button */}
+            {/* Theme Toggle */}
             <button
-              type="button"
               onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
               style={{
-                display: 'inline-flex',
+                display: 'flex',
                 alignItems: 'center',
-                gap: 7,
-                padding: '6px 14px',
-                borderRadius: 20,
-                background: theme === 'dark' ? 'rgba(30, 41, 59, 0.9)' : 'rgba(241, 245, 249, 0.95)',
-                border: '1px solid var(--border-default)',
+                justifyContent: 'center',
+                width: 32,
+                height: 32,
+                borderRadius: '50%',
+                background: 'var(--bg-elevated)',
+                border: '1px solid var(--border-subtle)',
                 color: 'var(--text-primary)',
-                fontSize: '0.82rem',
-                fontWeight: 700,
                 cursor: 'pointer',
-                boxShadow: 'var(--shadow-sm)',
-                transition: 'all 0.2s ease',
+                transition: 'all var(--transition)'
               }}
-              title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} mode`}
+              title="Toggle Light/Dark Theme"
             >
-              {theme === 'dark' ? (
-                <>
-                  <Sun size={15} color="#f59e0b" fill="#f59e0b" />
-                  <span>Light Mode</span>
-                </>
-              ) : (
-                <>
-                  <Moon size={15} color="#6366f1" fill="#6366f1" />
-                  <span>Dark Mode</span>
-                </>
-              )}
+              {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
             </button>
 
             <div style={{ display:'flex', alignItems:'center', gap:8 }}>
