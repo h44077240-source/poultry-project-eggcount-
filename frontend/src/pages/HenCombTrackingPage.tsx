@@ -858,30 +858,18 @@ export default function HenCombTrackingPage() {
 
     // Store normalized coordinates [0.0 - 1.0] relative to processed frame
     // This mathematically ensures pixel-perfect alignment on any screen dimensions!
-    const detections: any[] = []
-    for (const item of rawDets) {
+    const detections = rawDets.map((item: any) => {
       const b = item.box || [0, 0, 0, 0]
-      const nb = [
-        b[0] / fw,
-        b[1] / fh,
-        b[2] / fw,
-        b[3] / fh
-      ]
-      const ncx = (nb[0] + nb[2]) / 2
-      const ncy = (nb[1] + nb[3]) / 2
-      // Deduplicate: NEVER allow two boxes on the same comb
-      const isDup = detections.some((ex: any) => {
-        const excx = (ex.normBox[0] + ex.normBox[2]) / 2
-        const excy = (ex.normBox[1] + ex.normBox[3]) / 2
-        return Math.hypot(ncx - excx, ncy - excy) < 0.035
-      })
-      if (!isDup) {
-        detections.push({
-          ...item,
-          normBox: nb
-        })
+      return {
+        ...item,
+        normBox: [
+          b[0] / fw,
+          b[1] / fh,
+          b[2] / fw,
+          b[3] / fh
+        ]
       }
-    }
+    })
 
     // Keep detections strictly sorted by sequential hen_number: 1, 2, 3, 4, 5...
     detections.sort((a: any, b: any) => (a.hen_number || 0) - (b.hen_number || 0))
@@ -1017,15 +1005,11 @@ export default function HenCombTrackingPage() {
       let width = targetW
       let height = targetH
       if (prevBox) {
-        // Prevent box gliding across the screen if an ID shifts or jumps
-        const moveDist = Math.hypot(targetX - prevBox[0], targetY - prevBox[1])
-        if (moveDist < 45) {
-          const LERP = 0.50
-          x = prevBox[0] + (targetX - prevBox[0]) * LERP
-          y = prevBox[1] + (targetY - prevBox[1]) * LERP
-          width = prevBox[2] + (targetW - prevBox[2]) * LERP
-          height = prevBox[3] + (targetH - prevBox[3]) * LERP
-        }
+        const LERP = 0.50
+        x = prevBox[0] + (targetX - prevBox[0]) * LERP
+        y = prevBox[1] + (targetY - prevBox[1]) * LERP
+        width = prevBox[2] + (targetW - prevBox[2]) * LERP
+        height = prevBox[3] + (targetH - prevBox[3]) * LERP
       }
       animBoxesRef.current.set(henId, [x, y, width, height])
 
