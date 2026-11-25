@@ -296,9 +296,9 @@ def _sync_generate_frames(video_source, ref_settings=None):
     NEW_HEN_MIN_DIST = 30.0  # Rejects duplicate boxes on the same hen
     MAX_LOST_MEMORY = 30  # Frame memory for lost hens before retirement
 
-    def extract_combs(f_img, conf_thresh=0.08, imgsz=None):
+    def extract_combs(f_img, conf_thresh=0.06, imgsz=None):
         if imgsz is None:
-            imgsz = 352 if is_cloud else 640
+            imgsz = 640
         if active_model is None:
             return []
         try:
@@ -332,13 +332,13 @@ def _sync_generate_frames(video_source, ref_settings=None):
 
                 if not raw_boxes:
                     return []
-                # Strict NMS threshold 0.22 so duplicate overlapping boxes on same comb are merged
-                indices = cv2.dnn.NMSBoxes(raw_boxes, raw_confs, score_threshold=conf_thresh, nms_threshold=0.22)
+                # Balanced NMS threshold 0.45 so adjacent distinct hen combs are not deleted
+                indices = cv2.dnn.NMSBoxes(raw_boxes, raw_confs, score_threshold=conf_thresh, nms_threshold=0.45)
                 idx_list = indices.flatten() if hasattr(indices, 'flatten') else indices
                 bx_list = [raw_boxes[i] for i in idx_list]
                 cf_list = [raw_confs[i] for i in idx_list]
             else:
-                res = active_model.predict(f_img, imgsz=imgsz, conf=conf_thresh, iou=0.22, verbose=False)[0]
+                res = active_model.predict(f_img, imgsz=imgsz, conf=conf_thresh, iou=0.45, verbose=False)[0]
                 if res.boxes is None or len(res.boxes) == 0:
                     return []
                 bx = res.boxes.xyxy.cpu().numpy()
@@ -352,26 +352,25 @@ def _sync_generate_frames(video_source, ref_settings=None):
 
             # Balanced comb color mask: captures rich red, pale pink, and orange-red combs
             comb_mask = (
-                (((h_ch >= 135) | (h_ch <= 30)) & (s_ch > 10) & (v_ch > 18) & ((r_ch - g_ch) > 2)) |
-                (((r_ch - np.maximum(g_ch, b_ch)) > 3) & (s_ch > 8) & (v_ch > 20))
+                (((h_ch >= 135) | (h_ch <= 32)) & (s_ch > 8) & (v_ch > 16) & ((r_ch - g_ch) > 1)) |
+                (((r_ch - np.maximum(g_ch, b_ch)) > 2) & (s_ch > 6) & (v_ch > 16))
             )
 
             candidates = []
             for b, conf in zip(bx_list, cf_list):
                 bx1, by1, bw, bh = float(b[0]), float(b[1]), float(b[2]), float(b[3])
-                if bw < 10 or bh < 10 or bw > in_w * 0.35 or bh > in_h * 0.35:
+                if bw < 6 or bh < 6 or bw > in_w * 0.35 or bh > in_h * 0.35:
                     continue
 
                 aspect = bw / float(bh)
                 # Reject thin vertical wires or long horizontal beams
-                if aspect < 0.22 or aspect > 3.6:
+                if aspect < 0.20 or aspect > 3.8:
                     continue
 
                 orig_x1 = max(0, min(in_w - 1, int(bx1)))
                 orig_y1 = max(0, min(in_h - 1, int(by1)))
                 orig_x2 = max(0, min(in_w - 1, int(bx1 + bw)))
-                search_bh = bh * 0.50 if bh > 30 else bh
-                orig_y2 = max(0, min(in_h - 1, int(by1 + search_bh)))
+                orig_y2 = max(0, min(in_h - 1, int(by1 + bh)))
 
                 # Edge artifacts rejection
                 if (orig_x1 <= 2 or orig_x2 >= in_w - 2) and conf < 0.28:
@@ -381,10 +380,10 @@ def _sync_generate_frames(video_source, ref_settings=None):
                 comb_px = np.count_nonzero(crop)
 
                 # Color verification: reject non-red background/floor/wires for low-conf detections
-                if comb_px < 1 and conf < 0.20:
+                if comb_px < 1 and conf < 0.12:
                     continue
 
-                has_red = comb_px >= 3
+                has_red = comb_px >= 2
                 if has_red:
                     ys, xs = np.where(crop)
                     cx = (orig_x1 + float(np.median(xs))) * scale_x_det
@@ -399,7 +398,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
                     bh_det = bh * scale_y_det
                     base_sz = max(18.0, min(32.0, max(bw_det * 0.5, bh_det * 0.5)))
 
-                if cy <= 6 or cy >= OUT_H - 6 or cx <= 6 or cx >= OUT_W - 6:
+                if cy <= 4 or cy >= OUT_H - 4 or cx <= 4 or cx >= OUT_W - 4:
                     continue
 
                 hw, hh = base_sz / 2.0, base_sz / 2.0
@@ -409,7 +408,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
                     "conf": conf
                 })
 
-            # Deduplication: merge only overlapping boxes on exact same comb (radius 18px or IoU > 0.38)
+            # Deduplication: merge only overlapping boxes on exact same comb (radius 14px or IoU > 0.48)
             candidates.sort(key=lambda d: d["conf"], reverse=True)
             dedup = []
             for d in candidates:
@@ -421,7 +420,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
                     b2 = ex["box"]
                     dist = math.hypot(c1[0] - c2[0], c1[1] - c2[1])
                     iou = compute_iou(b1, b2)
-                    if dist < 18.0 or iou > 0.38:
+                    if dist < 14.0 or iou > 0.48:
                         duplicate = True
                         break
                 if not duplicate:
@@ -449,7 +448,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
         pass
 
     try:
-        init_dets = extract_combs(sample_frame, conf_thresh=0.08, imgsz=352 if is_cloud else 640)
+        init_dets = extract_combs(sample_frame, conf_thresh=0.06, imgsz=640)
         init_in_zone = [d for d in init_dets if is_in_zone(d["center"][0], d["center"][1])]
         if OUT_W < OUT_H:
             init_in_zone.sort(key=lambda d: -d["center"][1])
@@ -666,7 +665,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
 
                     # Anti-duplicate: Do not register if close to exact same tracked comb
                     is_near = any(
-                        math.hypot(dcx - h["center"][0], dcy - h["center"][1]) < 18.0 or compute_iou(d["box"], h["box"]) > 0.38
+                        math.hypot(dcx - h["center"][0], dcy - h["center"][1]) < 14.0 or compute_iou(d["box"], h["box"]) > 0.48
                         for h in hens.values() if h["lost"] <= 15
                     )
                     if is_near:
@@ -688,7 +687,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
                         t["lost"] = 0
                         t["center"] = d["center"]
                         t["box"] = list(d["box"])
-                        if t["hits"] >= 2 or d.get("conf", 0.0) >= 0.20:
+                        if t["hits"] >= 2 or d.get("conf", 0.0) >= 0.12:
                             # Confirmed genuine hen! Promote to permanent hen
                             hid = next_id
                             next_id += 1

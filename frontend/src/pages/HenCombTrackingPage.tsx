@@ -777,8 +777,8 @@ export default function HenCombTrackingPage() {
     sendingRef.current = true
 
     try {
-      // Standardize capture canvas to max 480px for ultra-low latency upload (3-5ms)
-      const maxDim = 480
+      // Standardize capture canvas to max 640px native YOLO resolution for sharp comb detection
+      const maxDim = 640
       let cw = video.videoWidth
       let ch = video.videoHeight
       if (Math.max(cw, ch) > maxDim) {
@@ -859,7 +859,7 @@ export default function HenCombTrackingPage() {
         const inter = iw * ih
         const u = (nb[2] - nb[0]) * (nb[3] - nb[1]) + (enb[2] - enb[0]) * (enb[3] - enb[1]) - inter
         const iou = u > 0 ? inter / u : 0
-        if ((dist < 0.016 && iou > 0.25) || iou > 0.38) {
+        if ((dist < 0.012 && iou > 0.30) || iou > 0.50) {
           isDup = true
           break
         }
