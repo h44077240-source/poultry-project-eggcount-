@@ -859,7 +859,7 @@ export default function HenCombTrackingPage() {
         const inter = iw * ih
         const u = (nb[2] - nb[0]) * (nb[3] - nb[1]) + (enb[2] - enb[0]) * (enb[3] - enb[1]) - inter
         const iou = u > 0 ? inter / u : 0
-        if ((dist < 0.012 && iou > 0.30) || iou > 0.50) {
+        if (d.hen_number === ex.hen_number || (dist < 0.008 && iou > 0.55) || iou > 0.68) {
           isDup = true
           break
         }
