@@ -69,8 +69,10 @@ def perform_moire_analysis(image_bytes: bytes) -> Dict[str, Any]:
         strong_count = int(np.sum(strong_edges))
         if strong_count > 100:
             strong_ang = ang[strong_edges]
-            is_h = (strong_ang < 4.5) | (strong_ang > 355.5) | ((strong_ang > 175.5) & (strong_ang < 184.5))
-            is_v = ((strong_ang > 85.5) & (strong_ang < 94.5)) | ((strong_ang > 265.5) & (strong_ang < 274.5))
+            # Handheld mobile phones capturing a display screen typically have a slight hand tilt (+-8.5 deg)
+            tol = 8.5
+            is_h = (strong_ang < tol) | (strong_ang > (360.0 - tol)) | ((strong_ang > (180.0 - tol)) & (strong_ang < (180.0 + tol)))
+            is_v = ((strong_ang > (90.0 - tol)) & (strong_ang < (90.0 + tol))) | ((strong_ang > (270.0 - tol)) & (strong_ang < (270.0 + tol)))
             hv_ratio = float(np.sum(is_h | is_v) / strong_count)
         else:
             hv_ratio = 0.0
@@ -167,16 +169,19 @@ def perform_moire_analysis(image_bytes: bytes) -> Dict[str, Any]:
                 reasons.append(f"Intense periodic pixel grid interference ({peaks_high} harmonic peaks)")
 
         # Check C: Digital Software UI / Window / Direct Screenshot Detection
-        # Digital UI requires BOTH flat digital blocks (> 0.12) AND rigid 90-degree orthogonal edges (> 0.34)
         if not is_screen:
-            if flat_ratio > 0.12 and hv_ratio > 0.34:
+            if flat_ratio > 0.12 and hv_ratio > 0.32 and long_line_count > 35:
                 is_screen = True
                 detected_device = "laptop / computer screen"
-                reasons.append(f"Digital computer UI detected (flat blocks: {flat_ratio*100:.1f}%, H/V edges: {hv_ratio*100:.1f}%)")
-            elif hv_ratio > 0.40 and long_line_count > 35:
+                reasons.append(f"Digital computer UI detected (flat blocks: {flat_ratio*100:.1f}%, H/V edges: {hv_ratio*100:.1f}%, {long_line_count} raster lines)")
+            elif hv_ratio > 0.40 and long_line_count > 30:
                 is_screen = True
                 detected_device = "laptop or monitor screen"
                 reasons.append(f"Display window geometry detected (H/V alignment: {hv_ratio*100:.1f}%, {long_line_count} raster lines)")
+            elif flat_ratio > 0.14 and hv_ratio > 0.42:
+                is_screen = True
+                detected_device = "digital display"
+                reasons.append(f"Electronic display detected (flat block ratio: {flat_ratio*100:.1f}%, H/V alignment: {hv_ratio*100:.1f}%)")
 
         if is_screen:
             status = "SUSPICIOUS"
