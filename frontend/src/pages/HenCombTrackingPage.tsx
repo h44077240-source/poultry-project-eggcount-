@@ -380,6 +380,51 @@ export default function HenCombTrackingPage() {
     }
   }
 
+  const handleVideoReady = () => {
+    const video = videoRef.current
+    if (!video) return
+    video.muted = true
+    video.play().catch(() => {})
+    if (overlayRef.current) {
+      overlayRef.current.width = overlayRef.current.clientWidth
+      overlayRef.current.height = overlayRef.current.clientHeight
+    }
+    if (!runningRef.current && video.videoWidth > 0) {
+      runningRef.current = true
+      startLoop()
+    }
+    // Instant initial comb detection on Frame 0 (boxes appear right away)
+    sendLiveFrame(0)
+  }
+
+  const handleVideoSeeked = () => {
+    if (videoRef.current) {
+      if (videoRef.current.currentTime < 0.6) {
+        try {
+          fetch(`${getTrackerBaseUrl()}/reset`, { method: 'POST' }).catch(() => {})
+        } catch (e) {}
+        setTotalCount(0)
+        setVisibleCount(0)
+        frameNumberRef.current = 0
+        latestResultsRef.current = []
+        animBoxesRef.current.clear()
+      }
+      sendLiveFrame(frameNumberRef.current + 1)
+    }
+  }
+
+  const silentBackgroundUpload = (file: File) => {
+    try {
+      const activeBackendUrl = getTrackerBaseUrl()
+      const formData = new FormData()
+      formData.append('file', file)
+      fetch(`${activeBackendUrl}/upload`, {
+        method: 'POST',
+        body: formData
+      }).catch(() => {})
+    } catch (_) {}
+  }
+
   const startCloudUpload = (file: File) => {
     setShowUploadChoiceModal(false)
     setErrorMsg(null)
@@ -498,12 +543,17 @@ export default function HenCombTrackingPage() {
 
     stopLiveCamera()
     setErrorMsg(null)
-    setActiveLoadingCard(cardType)
-    setPendingVideoFile(file)
+    setActiveLoadingCard(null)
+    setIsProcessing(false)
+    setPendingVideoFile(null)
     setShowUploadChoiceModal(false)
 
-    // Always upload the user's actual selected video file so their exact video runs!
-    startCloudUpload(file)
+    // Instant local playback & 30 FPS AI comb detection (ZERO loading wait!)
+    startInstantLocalPlayback(file)
+
+    // Silent background upload so video is preserved on server without UI blocking
+    silentBackgroundUpload(file)
+
     if (e.target) e.target.value = ''
   }
 
@@ -702,11 +752,12 @@ export default function HenCombTrackingPage() {
         const blob = new Blob(recordedChunksRef.current, { type: mimeType })
         if (blob.size === 0) return
         stopLiveCamera()
-        setIsProcessing(true)
+        setIsProcessing(false)
         setErrorMsg(null)
         const ext = mimeType.includes('mp4') ? 'mp4' : 'webm'
         const file = new File([blob], `live_camera_recorded_${Date.now()}.${ext}`, { type: mimeType })
-        startCloudUpload(file)
+        startInstantLocalPlayback(file)
+        silentBackgroundUpload(file)
       }
       recorder.start(500)
       mediaRecorderRef.current = recorder
@@ -1383,8 +1434,12 @@ export default function HenCombTrackingPage() {
               ref={videoRef}
               src={localVideoUrl || undefined}
               playsInline
+              muted
               controls
               autoPlay
+              onLoadedData={handleVideoReady}
+              onCanPlay={handleVideoReady}
+              onSeeked={handleVideoSeeked}
               onPlay={handleVideoPlay}
               style={{ width: '100%', height: '100%', objectFit: fitMode }}
             />
@@ -2175,8 +2230,12 @@ export default function HenCombTrackingPage() {
                     ref={videoRef}
                     src={localVideoUrl || undefined}
                     playsInline
+                    muted
                     controls
                     autoPlay
+                    onLoadedData={handleVideoReady}
+                    onCanPlay={handleVideoReady}
+                    onSeeked={handleVideoSeeked}
                     onPlay={handleVideoPlay}
                     style={{ width: '100%', height: '100%', maxHeight: '75vh', objectFit: fitMode }}
                   />
