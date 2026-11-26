@@ -138,34 +138,34 @@ def detect_objects_image(image: np.ndarray, conf_threshold: float = 0.35, iou_th
                 tray_conf_sum += conf
                 det_id = tray_count
             elif class_name == "hen":
-                # Strict Comb localization: reject chicken body/torso/plumage detections
-                im_h, im_w = image.shape[:2]
-                max_cw = max(42, min(int(im_w * 0.18), 75))
-                max_ch = max(42, min(int(im_h * 0.15), 75))
-                if width > max_cw or height > max_ch or (width * height) > (max_cw * max_ch):
-                    continue
-
                 # Must contain genuine red comb pixels
                 crop = image[max(0, y):min(im_h - 1, y + height), max(0, x):min(im_w - 1, x + width)]
-                if crop.size > 0:
-                    b_ch, g_ch, r_ch = cv2.split(crop.astype(np.float32))
-                    hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
-                    h_ch, s_ch, v_ch = cv2.split(hsv)
-                    comb_red = (
-                        (((h_ch >= 130) | (h_ch <= 38)) & (s_ch > 8) & (v_ch > 14) & ((r_ch - g_ch) > 4)) |
-                        (((r_ch - np.maximum(g_ch, b_ch)) > 6) & (s_ch > 6) & (v_ch > 14)) |
-                        ((r_ch > 48) & (r_ch > g_ch + 4) & (r_ch > b_ch + 4))
-                    )
-                    if np.count_nonzero(comb_red) < 4:
-                        continue
+                if crop.size == 0:
+                    continue
+                b_ch, g_ch, r_ch = cv2.split(crop.astype(np.float32))
+                hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
+                h_ch, s_ch, v_ch = cv2.split(hsv)
+                comb_red = (
+                    (((h_ch >= 130) | (h_ch <= 38)) & (s_ch > 8) & (v_ch > 14) & ((r_ch - g_ch) > 4)) |
+                    (((r_ch - np.maximum(g_ch, b_ch)) > 6) & (s_ch > 6) & (v_ch > 14)) |
+                    ((r_ch > 48) & (r_ch > g_ch + 4) & (r_ch > b_ch + 4))
+                )
+                if np.count_nonzero(comb_red) < 3:
+                    continue
 
-                # Snug comb bounding box
-                cx = x + width / 2.0
-                cy = y + height / 2.0
-                w_box = min(float(width) * 0.98, 56.0)
-                h_box = min(float(height) * 0.98, 58.0)
-                x = int(max(0, cx - w_box / 2.0))
-                y = int(max(0, cy - h_box / 2.0))
+                # Snug comb crest localization (upper crest of head)
+                ys, xs = np.where(comb_red)
+                sorted_ys = np.argsort(ys)
+                top_n = max(3, int(len(ys) * 0.45))
+                top_idx = sorted_ys[:top_n]
+
+                comb_cx = max(0, min(im_w - 1, x)) + float(np.median(xs[top_idx]))
+                comb_cy = max(0, min(im_h - 1, y)) + float(np.median(ys[top_idx]))
+
+                w_box = max(24.0, min(float(width) * 0.95, 56.0))
+                h_box = max(24.0, min(float(height) * 0.95, 58.0))
+                x = int(max(0, comb_cx - w_box / 2.0))
+                y = int(max(0, comb_cy - h_box / 2.0))
                 width = int(w_box)
                 height = int(h_box)
 

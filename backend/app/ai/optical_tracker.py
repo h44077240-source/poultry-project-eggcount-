@@ -150,41 +150,49 @@ class OpticalHenTracker:
                         ((r_ch > 48) & (r_ch > g_ch + 4) & (r_ch > b_ch + 4))
                     )
 
+                    scale_factor = max(fw, fh) / 640.0
                     for box, conf in zip(boxes, confs):
                         x1, y1, x2, y2 = map(int, box)
                         hw = x2 - x1
                         hh = y2 - y1
-                        if hw < 4 or hh < 4:
-                            continue
-                        # Reject giant proposals that cover the chicken body/plumage
-                        if hw > max_comb_w or hh > max_comb_h or (hw * hh) > max_area:
+                        if hw < 5 or hh < 5:
                             continue
 
                         aspect = hw / float(hh)
-                        if aspect < 0.20 or aspect > 3.8:
+                        if aspect < 0.15 or aspect > 4.5:
                             continue
 
-                        crop_red = comb_red[max(0, y1):min(fh - 1, y2), max(0, x1):min(fw - 1, x2)]
+                        cl_x1, cl_y1 = max(0, min(fw - 1, x1)), max(0, min(fh - 1, y1))
+                        cl_x2, cl_y2 = max(0, min(fw - 1, x2)), max(0, min(fh - 1, y2))
+                        crop_red = comb_red[cl_y1:cl_y2, cl_x1:cl_x2]
                         comb_px = np.count_nonzero(crop_red)
 
                         # Color verification: MUST contain genuine red comb pixels. Rejects white body feathers!
-                        if comb_px < 4:
+                        if comb_px < 3:
                             continue
 
-                        # Snug Comb Localization: Focus box tightly on the comb crest, never on the hen's body
-                        scale_factor = max(fw, fh) / 640.0
-                        cx = (x1 + x2) / 2.0
-                        cy = (y1 + y2) / 2.0
-                        # Clamp bounding box tightly to comb dimensions (max 56px)
-                        w_box = max(14.0 * scale_factor, min(float(hw) * 0.98, 56.0 * scale_factor))
-                        h_box = max(14.0 * scale_factor, min(float(hh) * 0.98, 58.0 * scale_factor))
+                        # Snug Comb Centroid Localization: Locates the comb crest at the top of the head
+                        # Keeps boxes tightly on the red comb, NEVER on the chicken's body feathers!
+                        ys, xs = np.where(crop_red)
+                        sorted_ys = np.argsort(ys)
+                        top_n = max(3, int(len(ys) * 0.45))
+                        top_idx = sorted_ys[:top_n]
+
+                        comb_cx = cl_x1 + float(np.median(xs[top_idx]))
+                        comb_cy = cl_y1 + float(np.median(ys[top_idx]))
+                        cx = comb_cx
+                        cy = comb_cy
+
+                        # Snug comb bounding box (24px to 56px)
+                        w_box = max(24.0 * scale_factor, min(float(hw) * 0.95, 56.0 * scale_factor))
+                        h_box = max(24.0 * scale_factor, min(float(hh) * 0.95, 58.0 * scale_factor))
                         hw_box = w_box / 2.0
                         hh_box = h_box / 2.0
                         box_final = [
-                            max(0.0, float(cx - hw_box)),
-                            max(0.0, float(cy - hh_box)),
-                            min(float(fw - 1), float(cx + hw_box)),
-                            min(float(fh - 1), float(cy + hh_box))
+                            max(0.0, float(comb_cx - hw_box)),
+                            max(0.0, float(comb_cy - hh_box)),
+                            min(float(fw - 1), float(comb_cx + hw_box)),
+                            min(float(fh - 1), float(comb_cy + hh_box))
                         ]
 
                         # Reject ceiling fixtures at top
@@ -301,31 +309,37 @@ class OpticalHenTracker:
                             x1, y1, x2, y2 = map(int, box)
                             hw = x2 - x1
                             hh = y2 - y1
-                            if hw < 4 or hh < 4:
-                                continue
-                            if hw > max_comb_w or hh > max_comb_h or (hw * hh) > max_area:
+                            if hw < 5 or hh < 5:
                                 continue
                             aspect = hw / float(hh)
-                            if aspect < 0.20 or aspect > 3.8:
+                            if aspect < 0.15 or aspect > 4.5:
                                 continue
-                            x1, y1 = max(0, min(fw - 1, x1)), max(0, min(fh - 1, y1))
-                            x2, y2 = max(0, min(fw - 1, x2)), max(0, min(fh - 1, y2))
-                            crop_red = comb_red[y1:min(fh - 1, y2), x1:x2]
+                            cl_x1, cl_y1 = max(0, min(fw - 1, x1)), max(0, min(fh - 1, y1))
+                            cl_x2, cl_y2 = max(0, min(fw - 1, x2)), max(0, min(fh - 1, y2))
+                            crop_red = comb_red[cl_y1:cl_y2, cl_x1:cl_x2]
                             comb_px = np.count_nonzero(crop_red)
-                            if comb_px < 4:
+                            if comb_px < 3:
                                 continue
 
-                            cx = (x1 + x2) / 2.0
-                            cy = (y1 + y2) / 2.0
-                            w_box = max(14.0 * scale_factor, min(float(hw) * 0.98, 56.0 * scale_factor))
-                            h_box = max(14.0 * scale_factor, min(float(hh) * 0.98, 58.0 * scale_factor))
+                            ys, xs = np.where(crop_red)
+                            sorted_ys = np.argsort(ys)
+                            top_n = max(3, int(len(ys) * 0.45))
+                            top_idx = sorted_ys[:top_n]
+
+                            comb_cx = cl_x1 + float(np.median(xs[top_idx]))
+                            comb_cy = cl_y1 + float(np.median(ys[top_idx]))
+                            cx = comb_cx
+                            cy = comb_cy
+
+                            w_box = max(24.0 * scale_factor, min(float(hw) * 0.95, 56.0 * scale_factor))
+                            h_box = max(24.0 * scale_factor, min(float(hh) * 0.95, 58.0 * scale_factor))
                             hw_b = w_box / 2.0
                             hh_b = h_box / 2.0
                             box_final = [
-                                max(0.0, float(cx - hw_b)),
-                                max(0.0, float(cy - hh_b)),
-                                min(float(fw - 1), float(cx + hw_b)),
-                                min(float(fh - 1), float(cy + hh_b))
+                                max(0.0, float(comb_cx - hw_b)),
+                                max(0.0, float(comb_cy - hh_b)),
+                                min(float(fw - 1), float(comb_cx + hw_b)),
+                                min(float(fh - 1), float(comb_cy + hh_b))
                             ]
                             init_candidates.append({
                                 "box": box_final,
@@ -507,8 +521,8 @@ class OpticalHenTracker:
                         hdata["lost"] += 1
 
                 # Stage 2: Register New Hen entering the zone with strict deduplication & multi-frame confirmation
-                min_new_dist = 28.0
-                unmatched_fresh = [det for det_idx, det in enumerate(fresh) if det_idx not in used_dets and det.get("conf", 0.0) >= 0.05]
+                min_new_dist = 22.0
+                unmatched_fresh = [det for det_idx, det in enumerate(fresh) if det_idx not in used_dets and det.get("conf", 0.0) >= 0.04]
                 unmatched_fresh.sort(key=lambda d: -d["center"][1])
                 updated_t = set()
                 for det in unmatched_fresh:
@@ -518,11 +532,10 @@ class OpticalHenTracker:
                     if not is_in_zone(cx, cy):
                         continue
 
-                    # Anti-duplicate: Match against all active or recent hens (lost <= 35)
-                    # Prevents assigning a new ID if a hen temporarily lowered its head or shifted slightly
+                    # Anti-duplicate: Only reject if near an actively tracked hen (lost <= 12)
                     is_near_active = any(
-                        math.hypot(cx - h["center"][0], cy - h["center"][1]) < min_new_dist or _box_iou(det["box"], h["box"]) > 0.30
-                        for h in self.hens.values() if h["lost"] <= 35
+                        math.hypot(cx - h["center"][0], cy - h["center"][1]) < min_new_dist or _box_iou(det["box"], h["box"]) > 0.35
+                        for h in self.hens.values() if h["lost"] <= 12
                     )
                     if is_near_active:
                         continue

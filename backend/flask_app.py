@@ -364,22 +364,14 @@ def _sync_generate_frames(video_source, ref_settings=None):
                 ((r_ch > 48) & (r_ch > g_ch + 4) & (r_ch > b_ch + 4))
             )
 
-            # Strict Comb dimension limits: eliminates all chicken body/torso/plumage proposals
-            max_comb_w = max(42, min(int(in_w * 0.18), 75))
-            max_comb_h = max(42, min(int(in_h * 0.15), 75))
-            max_area = int(max_comb_w * max_comb_h)
-
             candidates = []
             for b, conf in zip(bx_list, cf_list):
                 bx1, by1, bw, bh = float(b[0]), float(b[1]), float(b[2]), float(b[3])
-                if bw < 4 or bh < 4:
-                    continue
-                # Reject giant proposals that cover the chicken body/plumage
-                if bw > max_comb_w or bh > max_comb_h or (bw * bh) > max_area:
+                if bw < 5 or bh < 5:
                     continue
 
                 aspect = bw / float(bh)
-                if aspect < 0.20 or aspect > 3.8:
+                if aspect < 0.15 or aspect > 4.5:
                     continue
 
                 orig_x1 = max(0, min(in_w - 1, int(bx1)))
@@ -390,18 +382,29 @@ def _sync_generate_frames(video_source, ref_settings=None):
                 crop = comb_mask[orig_y1:orig_y2, orig_x1:orig_x2]
                 comb_px = np.count_nonzero(crop)
 
-                # Color verification: MUST contain genuine red comb pixels. Rejects white body feathers!
-                if comb_px < 4:
+                # Color verification: MUST contain genuine red comb pixels. Rejects non-comb regions
+                if comb_px < 3:
                     continue
 
-                cx = (orig_x1 + bw / 2.0) * scale_x_det
-                cy = (orig_y1 + bh / 2.0) * scale_y_det
+                # Snug Comb Centroid Localization: Locates the red comb crest at the upper part of head
+                # Prevents bounding boxes from ever extending down into the chicken's body or chest feathers
+                ys, xs = np.where(crop)
+                sorted_ys = np.argsort(ys)
+                top_n = max(3, int(len(ys) * 0.45))
+                top_idx = sorted_ys[:top_n]
+
+                comb_cx_orig = orig_x1 + float(np.median(xs[top_idx]))
+                comb_cy_orig = orig_y1 + float(np.median(ys[top_idx]))
+
+                cx = comb_cx_orig * scale_x_det
+                cy = comb_cy_orig * scale_y_det
+
                 bw_det = bw * scale_x_det
                 bh_det = bh * scale_y_det
                 
-                # Snug Comb Localization: Focus box tightly on the comb crest (max 56px), never on the hen's body
-                w_final = max(16.0, min(bw_det * 0.98, 56.0))
-                h_final = max(16.0, min(bh_det * 0.98, 58.0))
+                # Snug Comb Localization: Clamp box tightly around comb crest (24px to 56px)
+                w_final = max(24.0, min(bw_det * 0.95, 56.0))
+                h_final = max(24.0, min(bh_det * 0.95, 58.0))
                 hw, hh = w_final / 2.0, h_final / 2.0
 
                 if cy <= 2 or cy >= OUT_H - 2 or cx <= 2 or cx >= OUT_W - 2:
@@ -425,7 +428,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
                     b2 = ex["box"]
                     dist = math.hypot(c1[0] - c2[0], c1[1] - c2[1])
                     iou = compute_iou(b1, b2)
-                    if dist < 18.0 or iou > 0.40:
+                    if dist < 22.0 or iou > 0.35:
                         duplicate = True
                         break
                 if not duplicate:
@@ -628,7 +631,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
                         iou = compute_iou(d["box"], h["box"])
                         # Match strictly against CURRENT position (no stale home matching)
                         # Prevents box from jumping across to adjacent hen's comb
-                        if dist <= 26.0 or (dist <= 32.0 and iou >= 0.18):
+                        if dist <= 36.0 or (dist <= 46.0 and iou >= 0.15):
                             cost = (1.0 - iou) * 0.4 + (dist / 26.0) * 0.6
                             cands.append((cost, d_idx, hid))
 
@@ -669,11 +672,11 @@ def _sync_generate_frames(video_source, ref_settings=None):
                     if not (12 <= dcx <= OUT_W - 12 and 12 <= dcy <= OUT_H - 12):
                         continue
 
-                    # Anti-duplicate: Match against all active or recent hens (lost <= 35)
-                    # Prevents assigning a new ID if a hen temporarily lowered its head or shifted slightly
+                    # Anti-duplicate: Only reject if near an actively tracked hen (lost <= 12)
+                    # Prevents dead-zone drops while stopping duplicate IDs on the same hen
                     is_near = any(
-                        math.hypot(dcx - h["center"][0], dcy - h["center"][1]) < 28.0 or compute_iou(d["box"], h["box"]) > 0.30
-                        for h in hens.values() if h["lost"] <= 35
+                        math.hypot(dcx - h["center"][0], dcy - h["center"][1]) < 22.0 or compute_iou(d["box"], h["box"]) > 0.35
+                        for h in hens.values() if h["lost"] <= 12
                     )
                     if is_near:
                         continue
@@ -745,7 +748,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
             # 5. Visible hens: actively tracked on-screen with smooth persistence on low quality video
             render_hens = [
                 hid for hid, h in hens.items()
-                if h["lost"] <= 14 and (4 <= h["center"][0] <= OUT_W - 4 and 4 <= h["center"][1] <= OUT_H - 4)
+                if h["lost"] <= 18 and (4 <= h["center"][0] <= OUT_W - 4 and 4 <= h["center"][1] <= OUT_H - 4)
             ]
             
             # Sort for stable rendering order
