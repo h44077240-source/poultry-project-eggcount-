@@ -183,9 +183,17 @@ class OpticalHenTracker:
                         cx = comb_cx
                         cy = comb_cy
 
-                        # Snug comb bounding box (24px to 56px)
-                        w_box = max(24.0 * scale_factor, min(float(hw) * 0.95, 56.0 * scale_factor))
-                        h_box = max(24.0 * scale_factor, min(float(hh) * 0.95, 58.0 * scale_factor))
+                        comb_x_min = np.percentile(xs, 5)
+                        comb_x_max = np.percentile(xs, 95)
+                        comb_y_min = np.percentile(ys, 5)
+                        comb_y_max = np.percentile(ys, 95)
+
+                        comb_w_raw = (comb_x_max - comb_x_min)
+                        comb_h_raw = (comb_y_max - comb_y_min)
+
+                        # Snug comb bounding box strictly fitted to hen comb size (14px to 28px)
+                        w_box = max(14.0 * scale_factor, min(max(comb_w_raw + 2.0, float(hw) * 0.40), 28.0 * scale_factor))
+                        h_box = max(13.0 * scale_factor, min(max(comb_h_raw + 2.0, float(hh) * 0.38), 26.0 * scale_factor))
                         hw_box = w_box / 2.0
                         hh_box = h_box / 2.0
                         box_final = [

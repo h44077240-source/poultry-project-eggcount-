@@ -402,9 +402,17 @@ def _sync_generate_frames(video_source, ref_settings=None):
                 bw_det = bw * scale_x_det
                 bh_det = bh * scale_y_det
                 
-                # Snug Comb Localization: Clamp box tightly around comb crest (24px to 56px)
-                w_final = max(24.0, min(bw_det * 0.95, 56.0))
-                h_final = max(24.0, min(bh_det * 0.95, 58.0))
+                # Snug Comb Localization: Strictly fitted to the hen's comb crest (14px to 28px)
+                comb_x_min = np.percentile(xs, 5)
+                comb_x_max = np.percentile(xs, 95)
+                comb_y_min = np.percentile(ys, 5)
+                comb_y_max = np.percentile(ys, 95)
+
+                comb_w_raw = (comb_x_max - comb_x_min) * scale_x_det
+                comb_h_raw = (comb_y_max - comb_y_min) * scale_y_det
+
+                w_final = max(14.0, min(max(comb_w_raw + 2.0, bw_det * 0.40), 28.0))
+                h_final = max(13.0, min(max(comb_h_raw + 2.0, bh_det * 0.38), 26.0))
                 hw, hh = w_final / 2.0, h_final / 2.0
 
                 if cy <= 2 or cy >= OUT_H - 2 or cx <= 2 or cx >= OUT_W - 2:
@@ -788,24 +796,24 @@ def _sync_generate_frames(video_source, ref_settings=None):
                 cv2.rectangle(display, (x1, y1), (x2, y2), (0, 255, 0), 2)
 
                 # 2. White corner brackets
-                c_len = max(5, int(min(bw, bh) * 0.28))
+                c_len = max(3, int(min(bw, bh) * 0.25))
                 for px, py, dx, dy in [(x1, y1, 1, 1), (x2, y1, -1, 1), (x1, y2, 1, -1), (x2, y2, -1, -1)]:
                     cv2.line(display, (px, py), (px + dx * c_len, py), (255, 255, 255), 2, cv2.LINE_AA)
                     cv2.line(display, (px, py), (px, py + dy * c_len), (255, 255, 255), 2, cv2.LINE_AA)
 
                 # 3. Center target reticle dot
-                cv2.circle(display, (cx_dot, cy_dot), 3, (0, 255, 0), -1)
+                cv2.circle(display, (cx_dot, cy_dot), 2, (0, 255, 0), -1)
                 cv2.circle(display, (cx_dot, cy_dot), 1, (255, 255, 255), -1)
 
                 # 4. Solid green badge COMB #{hid} (PERMANENT UNIQUE ID, NEVER REPEATS!)
                 lbl_text = f"COMB #{hid}"
-                (tw, th), _ = cv2.getTextSize(lbl_text, cv2.FONT_HERSHEY_SIMPLEX, 0.40, 1)
-                badge_y1 = max(0, y1 - th - 6)
+                (tw, th), _ = cv2.getTextSize(lbl_text, cv2.FONT_HERSHEY_SIMPLEX, 0.35, 1)
+                badge_y1 = max(0, y1 - th - 5)
                 badge_y2 = y1
                 badge_x1 = x1
-                badge_x2 = min(OUT_W - 1, x1 + tw + 8)
+                badge_x2 = min(OUT_W - 1, x1 + tw + 6)
                 cv2.rectangle(display, (badge_x1, badge_y1), (badge_x2, badge_y2), (0, 255, 0), -1)
-                cv2.putText(display, lbl_text, (badge_x1 + 4, badge_y2 - 3), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (0, 0, 0), 1, cv2.LINE_AA)
+                cv2.putText(display, lbl_text, (badge_x1 + 3, badge_y2 - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 0, 0), 1, cv2.LINE_AA)
 
             # Top-Left Telemetry HUD (smooth continuous time display)
             time_s = (f_idx / fps) if fps > 0 else 0.0
