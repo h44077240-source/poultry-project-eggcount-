@@ -307,10 +307,10 @@ def filter_top_view_trays(boxes: np.ndarray, confs: np.ndarray) -> Tuple[np.ndar
     aspect_ratios = widths / np.maximum(heights, 1)
     areas = widths * heights
 
-    # 1. Top view trays are approximately square
-    shape_mask = (aspect_ratios >= 0.70) & (aspect_ratios <= 1.50) & (confs >= 0.50)
+    # 1. Top view trays are approximately square (exclude horizontal cracks/seams)
+    shape_mask = (aspect_ratios >= 0.70) & (aspect_ratios <= 1.45) & (confs >= 0.50)
     if np.sum(shape_mask) == 0:
-        shape_mask = (aspect_ratios >= 0.65) & (aspect_ratios <= 1.55) & (confs >= 0.40)
+        shape_mask = (aspect_ratios >= 0.65) & (aspect_ratios <= 1.50) & (confs >= 0.40)
 
     if np.sum(shape_mask) == 0:
         return np.array([]), np.array([])
@@ -324,8 +324,8 @@ def filter_top_view_trays(boxes: np.ndarray, confs: np.ndarray) -> Tuple[np.ndar
     ref_area = np.median(c_areas)
     ref_width = np.median(c_widths)
 
-    # Any box smaller than 40% of median area or 55% of median width is background clutter (wire mesh, floor patches, etc.)
-    size_mask = (c_areas >= ref_area * 0.40) & (c_widths >= ref_width * 0.55)
+    # Any box smaller than 45% of median area or 55% of median width is background clutter (wire mesh, floor patches, etc.)
+    size_mask = (c_areas >= ref_area * 0.45) & (c_widths >= ref_width * 0.55)
 
     final_boxes = c_boxes[size_mask]
     final_confs = c_confs[size_mask]
