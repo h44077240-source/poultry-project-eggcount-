@@ -138,6 +138,37 @@ def detect_objects_image(image: np.ndarray, conf_threshold: float = 0.35, iou_th
                 tray_conf_sum += conf
                 det_id = tray_count
             elif class_name == "hen":
+                # Strict Comb localization: reject chicken body/torso/plumage detections
+                im_h, im_w = image.shape[:2]
+                max_cw = max(42, min(int(im_w * 0.18), 75))
+                max_ch = max(42, min(int(im_h * 0.15), 75))
+                if width > max_cw or height > max_ch or (width * height) > (max_cw * max_ch):
+                    continue
+
+                # Must contain genuine red comb pixels
+                crop = image[max(0, y):min(im_h - 1, y + height), max(0, x):min(im_w - 1, x + width)]
+                if crop.size > 0:
+                    b_ch, g_ch, r_ch = cv2.split(crop.astype(np.float32))
+                    hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
+                    h_ch, s_ch, v_ch = cv2.split(hsv)
+                    comb_red = (
+                        (((h_ch >= 130) | (h_ch <= 38)) & (s_ch > 8) & (v_ch > 14) & ((r_ch - g_ch) > 4)) |
+                        (((r_ch - np.maximum(g_ch, b_ch)) > 6) & (s_ch > 6) & (v_ch > 14)) |
+                        ((r_ch > 48) & (r_ch > g_ch + 4) & (r_ch > b_ch + 4))
+                    )
+                    if np.count_nonzero(comb_red) < 4:
+                        continue
+
+                # Snug comb bounding box
+                cx = x + width / 2.0
+                cy = y + height / 2.0
+                w_box = min(float(width) * 0.98, 56.0)
+                h_box = min(float(height) * 0.98, 58.0)
+                x = int(max(0, cx - w_box / 2.0))
+                y = int(max(0, cy - h_box / 2.0))
+                width = int(w_box)
+                height = int(h_box)
+
                 hen_count += 1
                 color = (0, 0, 255) # Red in BGR
                 label = f"HEN/COMB {hen_count} ({int(conf*100)}%)"

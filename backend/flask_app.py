@@ -357,22 +357,29 @@ def _sync_generate_frames(video_source, ref_settings=None):
             h_ch, s_ch, v_ch = cv2.split(hsv)
             b_ch, g_ch, r_ch = cv2.split(f_img.astype(np.float32))
 
-            # Multi-spectrum comb mask: captures rich red, pale pink, orange-red, and low-light combs
+            # Comb Red Mask: High-contrast red/crimson comb segmentation, rejecting white/cream hen feathers
             comb_mask = (
-                (((h_ch >= 130) | (h_ch <= 38)) & (s_ch > 3) & (v_ch > 10) & ((r_ch - g_ch) > -4)) |
-                (((r_ch - np.maximum(g_ch, b_ch)) > -2) & (s_ch > 3) & (v_ch > 10)) |
-                ((r_ch > 40) & (r_ch > g_ch - 5) & (r_ch > b_ch - 5))
+                (((h_ch >= 130) | (h_ch <= 38)) & (s_ch > 8) & (v_ch > 14) & ((r_ch - g_ch) > 4)) |
+                (((r_ch - np.maximum(g_ch, b_ch)) > 6) & (s_ch > 6) & (v_ch > 14)) |
+                ((r_ch > 48) & (r_ch > g_ch + 4) & (r_ch > b_ch + 4))
             )
+
+            # Strict Comb dimension limits: eliminates all chicken body/torso/plumage proposals
+            max_comb_w = max(42, min(int(in_w * 0.18), 75))
+            max_comb_h = max(42, min(int(in_h * 0.15), 75))
+            max_area = int(max_comb_w * max_comb_h)
 
             candidates = []
             for b, conf in zip(bx_list, cf_list):
                 bx1, by1, bw, bh = float(b[0]), float(b[1]), float(b[2]), float(b[3])
-                if bw < 4 or bh < 4 or bw > in_w * 0.50 or bh > in_h * 0.50:
+                if bw < 4 or bh < 4:
+                    continue
+                # Reject giant proposals that cover the chicken body/plumage
+                if bw > max_comb_w or bh > max_comb_h or (bw * bh) > max_area:
                     continue
 
                 aspect = bw / float(bh)
-                # Allow wide aspect ratios for combs viewed from all angles (0.08 to 5.0)
-                if aspect < 0.08 or aspect > 5.0:
+                if aspect < 0.20 or aspect > 3.8:
                     continue
 
                 orig_x1 = max(0, min(in_w - 1, int(bx1)))
@@ -383,8 +390,8 @@ def _sync_generate_frames(video_source, ref_settings=None):
                 crop = comb_mask[orig_y1:orig_y2, orig_x1:orig_x2]
                 comb_px = np.count_nonzero(crop)
 
-                # Only reject proposals below 0.08 if zero comb color pixels present
-                if comb_px < 1 and conf < 0.08:
+                # Color verification: MUST contain genuine red comb pixels. Rejects white body feathers!
+                if comb_px < 4:
                     continue
 
                 cx = (orig_x1 + bw / 2.0) * scale_x_det
@@ -392,9 +399,9 @@ def _sync_generate_frames(video_source, ref_settings=None):
                 bw_det = bw * scale_x_det
                 bh_det = bh * scale_y_det
                 
-                # Generous, snug bounding box: 1.18x padding so comb is never cut off
-                w_final = max(18.0, min(bw_det * 1.18, 95.0))
-                h_final = max(18.0, min(bh_det * 1.18, 100.0))
+                # Snug Comb Localization: Focus box tightly on the comb crest (max 56px), never on the hen's body
+                w_final = max(16.0, min(bw_det * 0.98, 56.0))
+                h_final = max(16.0, min(bh_det * 0.98, 58.0))
                 hw, hh = w_final / 2.0, h_final / 2.0
 
                 if cy <= 2 or cy >= OUT_H - 2 or cx <= 2 or cx >= OUT_W - 2:
@@ -406,8 +413,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
                     "conf": conf
                 })
 
-            # Fine deduplication: Only merges identical overlapping proposals on the SAME comb
-            # Keeps distinct combs of neighboring hens side-by-side!
+            # Comb Deduplication: Merges overlapping proposals on the SAME comb
             candidates.sort(key=lambda d: d["conf"], reverse=True)
             dedup = []
             for d in candidates:
@@ -419,7 +425,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
                     b2 = ex["box"]
                     dist = math.hypot(c1[0] - c2[0], c1[1] - c2[1])
                     iou = compute_iou(b1, b2)
-                    if dist < 8.0 or iou > 0.60:
+                    if dist < 18.0 or iou > 0.40:
                         duplicate = True
                         break
                 if not duplicate:
@@ -663,18 +669,18 @@ def _sync_generate_frames(video_source, ref_settings=None):
                     if not (12 <= dcx <= OUT_W - 12 and 12 <= dcy <= OUT_H - 12):
                         continue
 
-                    # Anti-duplicate: Only reject if too close to exact same existing tracked hen (10px or IoU > 0.55)
-                    # Keeps neighboring hens in adjacent cages/feeding lines fully detected!
+                    # Anti-duplicate: Match against all active or recent hens (lost <= 35)
+                    # Prevents assigning a new ID if a hen temporarily lowered its head or shifted slightly
                     is_near = any(
-                        math.hypot(dcx - h["center"][0], dcy - h["center"][1]) < 10.0 or compute_iou(d["box"], h["box"]) > 0.55
-                        for h in hens.values() if h["lost"] <= 15
+                        math.hypot(dcx - h["center"][0], dcy - h["center"][1]) < 28.0 or compute_iou(d["box"], h["box"]) > 0.30
+                        for h in hens.values() if h["lost"] <= 35
                     )
                     if is_near:
                         continue
 
                     # Match against tentative tracks
                     best_tid = None
-                    best_tdist = 28.0
+                    best_tdist = 30.0
                     for tid, tdata in tentative_hens.items():
                         tdist = math.hypot(dcx - tdata["center"][0], dcy - tdata["center"][1])
                         if tdist < best_tdist:
@@ -688,8 +694,9 @@ def _sync_generate_frames(video_source, ref_settings=None):
                         t["lost"] = 0
                         t["center"] = d["center"]
                         t["box"] = list(d["box"])
-                        if t["hits"] >= 2 or d.get("conf", 0.0) >= 0.10:
-                            # Confirmed genuine hen! Promote to permanent hen
+                        # Require at least 2 consistent frame hits to promote to permanent counted hen
+                        # (Eliminates all phantom 1-frame flickers and repeat counts!)
+                        if t["hits"] >= 2:
                             hid = next_id
                             next_id += 1
                             hens[hid] = {
@@ -700,26 +707,16 @@ def _sync_generate_frames(video_source, ref_settings=None):
                             }
                             del tentative_hens[best_tid]
                     else:
-                        # Instant promotion if confident enough (>= 0.11), else tentative
-                        if d.get("conf", 0.0) >= 0.11:
-                            hid = next_id
-                            next_id += 1
-                            hens[hid] = {
-                                "box": list(d["box"]),
-                                "center": d["center"],
-                                "lost": 0,
-                                "hits": 1
-                            }
-                        else:
-                            tid = next_tentative_id
-                            next_tentative_id += 1
-                            tentative_hens[tid] = {
-                                "box": list(d["box"]),
-                                "center": d["center"],
-                                "lost": 0,
-                                "hits": 1
-                            }
-                            updated_tentative.add(tid)
+                        # All new proposals start as tentative; never instant promotion
+                        tid = next_tentative_id
+                        next_tentative_id += 1
+                        tentative_hens[tid] = {
+                            "box": list(d["box"]),
+                            "center": d["center"],
+                            "lost": 0,
+                            "hits": 1
+                        }
+                        updated_tentative.add(tid)
 
                 # Clean tentative tracks that don't get confirmed
                 for tid in list(tentative_hens.keys()):
