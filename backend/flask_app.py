@@ -293,12 +293,12 @@ def _sync_generate_frames(video_source, ref_settings=None):
     MAX_COMB_H = 140   # Maximum height for hen HEAD/COMB only (scaled for display)
     MIN_COMB_SZ = 6    # Minimum comb size (captures all hen combs clearly)
     MATCH_RADIUS = 28.0  # Stable radius for tracking (prevents jumping to neighboring hen)
-    NEW_HEN_MIN_DIST = 30.0  # Rejects duplicate boxes on the same hen
+    NEW_HEN_MIN_DIST = 10.0  # Rejects duplicate boxes on the same hen comb while preserving adjacent hens
     MAX_LOST_MEMORY = 30  # Frame memory for lost hens before retirement
 
-    def extract_combs(f_img, conf_thresh=0.14, imgsz=None):
+    def extract_combs(f_img, conf_thresh=0.08, imgsz=None):
         if imgsz is None:
-            imgsz = 352 if is_cloud else 640
+            imgsz = 640
         if active_model is None:
             return []
         try:
@@ -309,9 +309,16 @@ def _sync_generate_frames(video_source, ref_settings=None):
             raw_boxes = []
             raw_confs = []
 
+            # CLAHE contrast enhancement for low quality, compressed or shadowy videos
+            lab = cv2.cvtColor(f_img, cv2.COLOR_BGR2LAB)
+            l_ch, a_ch, b_ch_lab = cv2.split(lab)
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+            enhanced_l = clahe.apply(l_ch)
+            enhanced_bgr = cv2.cvtColor(cv2.merge([enhanced_l, a_ch, b_ch_lab]), cv2.COLOR_LAB2BGR)
+            rgb_img = cv2.cvtColor(enhanced_bgr, cv2.COLOR_BGR2RGB)
+
             # Check if active_model is an ONNX Runtime InferenceSession
             if hasattr(active_model, 'run') and not hasattr(active_model, 'predict'):
-                rgb_img = cv2.cvtColor(f_img, cv2.COLOR_BGR2RGB)
                 ai_in = cv2.resize(rgb_img, (imgsz, imgsz)).astype(np.float32) / 255.0
                 ai_tensor = np.transpose(ai_in, (2, 0, 1))[np.newaxis, ...]
                 inp_name = active_model.get_inputs()[0].name
@@ -332,13 +339,13 @@ def _sync_generate_frames(video_source, ref_settings=None):
 
                 if not raw_boxes:
                     return []
-                # Strict NMS threshold 0.22 so duplicate overlapping boxes on same comb are merged
-                indices = cv2.dnn.NMSBoxes(raw_boxes, raw_confs, score_threshold=conf_thresh, nms_threshold=0.22)
+                # NMS threshold 0.35 so distinct neighboring combs are both preserved
+                indices = cv2.dnn.NMSBoxes(raw_boxes, raw_confs, score_threshold=conf_thresh, nms_threshold=0.35)
                 idx_list = indices.flatten() if hasattr(indices, 'flatten') else indices
                 bx_list = [raw_boxes[i] for i in idx_list]
                 cf_list = [raw_confs[i] for i in idx_list]
             else:
-                res = active_model.predict(f_img, imgsz=imgsz, conf=conf_thresh, iou=0.22, verbose=False)[0]
+                res = active_model.predict(enhanced_bgr, imgsz=imgsz, conf=conf_thresh, iou=0.35, verbose=False)[0]
                 if res.boxes is None or len(res.boxes) == 0:
                     return []
                 bx = res.boxes.xyxy.cpu().numpy()
@@ -350,66 +357,57 @@ def _sync_generate_frames(video_source, ref_settings=None):
             h_ch, s_ch, v_ch = cv2.split(hsv)
             b_ch, g_ch, r_ch = cv2.split(f_img.astype(np.float32))
 
-            # Balanced comb color mask: captures rich red, pale pink, and orange-red combs
+            # Multi-spectrum comb mask: captures rich red, pale pink, orange-red, and low-light combs
             comb_mask = (
-                (((h_ch >= 145) | (h_ch <= 22)) & (s_ch > 18) & (v_ch > 25) & ((r_ch - g_ch) > 6)) |
-                (((r_ch - np.maximum(g_ch, b_ch)) > 7) & (s_ch > 18) & (v_ch > 28))
+                (((h_ch >= 130) | (h_ch <= 38)) & (s_ch > 4) & (v_ch > 12) & ((r_ch - g_ch) > -3)) |
+                (((r_ch - np.maximum(g_ch, b_ch)) > 0) & (s_ch > 4) & (v_ch > 12)) |
+                ((r_ch > 45) & (r_ch > g_ch) & (r_ch > b_ch))
             )
 
             candidates = []
             for b, conf in zip(bx_list, cf_list):
                 bx1, by1, bw, bh = float(b[0]), float(b[1]), float(b[2]), float(b[3])
-                if bw < 10 or bh < 10 or bw > in_w * 0.35 or bh > in_h * 0.35:
+                if bw < 6 or bh < 6 or bw > in_w * 0.45 or bh > in_h * 0.45:
                     continue
 
                 aspect = bw / float(bh)
-                # Reject thin vertical wires (aspect < 0.38) or horizontal conveyor beams (aspect > 2.6)
-                if aspect < 0.38 or aspect > 2.6:
+                # Allow broader aspect ratios for combs viewed from different angles (0.20 to 3.8)
+                if aspect < 0.20 or aspect > 3.8:
                     continue
 
                 orig_x1 = max(0, min(in_w - 1, int(bx1)))
                 orig_y1 = max(0, min(in_h - 1, int(by1)))
                 orig_x2 = max(0, min(in_w - 1, int(bx1 + bw)))
-                search_bh = bh * 0.50 if bh > 30 else bh
-                orig_y2 = max(0, min(in_h - 1, int(by1 + search_bh)))
-
-                # Edge artifacts rejection
-                if (orig_x1 <= 2 or orig_x2 >= in_w - 2) and conf < 0.28:
-                    continue
+                orig_y2 = max(0, min(in_h - 1, int(by1 + bh)))
 
                 crop = comb_mask[orig_y1:orig_y2, orig_x1:orig_x2]
                 comb_px = np.count_nonzero(crop)
 
-                # Color verification: reject non-red background/floor/wires for low-conf detections
-                if comb_px < 2 and conf < 0.30:
+                # Only reject if virtually zero red/comb features on very low confidence proposal
+                if comb_px < 1 and conf < 0.08:
                     continue
 
-                has_red = comb_px >= 3
-                if has_red:
-                    ys, xs = np.where(crop)
-                    cx = (orig_x1 + float(np.median(xs))) * scale_x_det
-                    cy = (orig_y1 + float(np.median(ys))) * scale_y_det
-                    cw = (np.percentile(xs, 95) - np.percentile(xs, 5)) * scale_x_det
-                    ch = (np.percentile(ys, 95) - np.percentile(ys, 5)) * scale_y_det
-                    base_sz = max(18.0, min(34.0, max(cw, ch) + 4.0))
-                else:
-                    cx = (orig_x1 + bw / 2.0) * scale_x_det
-                    cy = (orig_y1 + min(bh * 0.30, 16.0)) * scale_y_det
-                    bw_det = bw * scale_x_det
-                    bh_det = bh * scale_y_det
-                    base_sz = max(18.0, min(32.0, max(bw_det * 0.5, bh_det * 0.5)))
+                cx = (orig_x1 + bw / 2.0) * scale_x_det
+                cy = (orig_y1 + bh / 2.0) * scale_y_det
+                bw_det = bw * scale_x_det
+                bh_det = bh * scale_y_det
+                
+                # Snug, accurate bounding box directly wrapping the hen's comb shape
+                w_final = max(14.0, min(bw_det * 1.05, 85.0))
+                h_final = max(14.0, min(bh_det * 1.05, 90.0))
+                hw, hh = w_final / 2.0, h_final / 2.0
 
-                if cy <= 6 or cy >= OUT_H - 6 or cx <= 6 or cx >= OUT_W - 6:
+                if cy <= 4 or cy >= OUT_H - 4 or cx <= 4 or cx >= OUT_W - 4:
                     continue
 
-                hw, hh = base_sz / 2.0, base_sz / 2.0
                 candidates.append({
                     "box": [cx - hw, cy - hh, cx + hw, cy + hh],
                     "center": (cx, cy),
                     "conf": conf
                 })
 
-            # AGGRESSIVE DEDUPLICATION: ZERO duplicate boxes on the same hen head/comb
+            # Fine deduplication: Only merges identical overlapping proposals on the SAME comb
+            # Keeps distinct combs of neighboring hens side-by-side!
             candidates.sort(key=lambda d: d["conf"], reverse=True)
             dedup = []
             for d in candidates:
@@ -421,7 +419,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
                     b2 = ex["box"]
                     dist = math.hypot(c1[0] - c2[0], c1[1] - c2[1])
                     iou = compute_iou(b1, b2)
-                    if dist < 32.0 or iou > 0.15:
+                    if dist < 10.0 or iou > 0.55:
                         duplicate = True
                         break
                 if not duplicate:
@@ -665,9 +663,10 @@ def _sync_generate_frames(video_source, ref_settings=None):
                     if not (12 <= dcx <= OUT_W - 12 and 12 <= dcy <= OUT_H - 12):
                         continue
 
-                    # Anti-duplicate: Do not register if close to any existing tracked hen (28px)
+                    # Anti-duplicate: Only reject if too close to exact same existing tracked hen (10px or IoU > 0.55)
+                    # Keeps neighboring hens in adjacent cages/feeding lines fully detected!
                     is_near = any(
-                        math.hypot(dcx - h["center"][0], dcy - h["center"][1]) < 28.0 or compute_iou(d["box"], h["box"]) > 0.15
+                        math.hypot(dcx - h["center"][0], dcy - h["center"][1]) < 10.0 or compute_iou(d["box"], h["box"]) > 0.55
                         for h in hens.values() if h["lost"] <= 15
                     )
                     if is_near:
@@ -675,7 +674,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
 
                     # Match against tentative tracks
                     best_tid = None
-                    best_tdist = 30.0
+                    best_tdist = 28.0
                     for tid, tdata in tentative_hens.items():
                         tdist = math.hypot(dcx - tdata["center"][0], dcy - tdata["center"][1])
                         if tdist < best_tdist:
@@ -689,7 +688,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
                         t["lost"] = 0
                         t["center"] = d["center"]
                         t["box"] = list(d["box"])
-                        if t["hits"] >= 2:
+                        if t["hits"] >= 2 or d.get("conf", 0.0) >= 0.10:
                             # Confirmed genuine hen! Promote to permanent hen
                             hid = next_id
                             next_id += 1
@@ -701,25 +700,36 @@ def _sync_generate_frames(video_source, ref_settings=None):
                             }
                             del tentative_hens[best_tid]
                     else:
-                        tid = next_tentative_id
-                        next_tentative_id += 1
-                        tentative_hens[tid] = {
-                            "box": list(d["box"]),
-                            "center": d["center"],
-                            "lost": 0,
-                            "hits": 1
-                        }
-                        updated_tentative.add(tid)
+                        # Instant promotion if confident enough (>= 0.11), else tentative
+                        if d.get("conf", 0.0) >= 0.11:
+                            hid = next_id
+                            next_id += 1
+                            hens[hid] = {
+                                "box": list(d["box"]),
+                                "center": d["center"],
+                                "lost": 0,
+                                "hits": 1
+                            }
+                        else:
+                            tid = next_tentative_id
+                            next_tentative_id += 1
+                            tentative_hens[tid] = {
+                                "box": list(d["box"]),
+                                "center": d["center"],
+                                "lost": 0,
+                                "hits": 1
+                            }
+                            updated_tentative.add(tid)
 
                 # Clean tentative tracks that don't get confirmed
                 for tid in list(tentative_hens.keys()):
                     if tid not in updated_tentative:
                         tentative_hens[tid]["lost"] += 1
-                        if tentative_hens[tid]["lost"] >= 2:
+                        if tentative_hens[tid]["lost"] >= 3:
                             del tentative_hens[tid]
 
             # 3. Dispatch current crisp frame to AI worker (throttled to avoid CPU thrashing)
-            ai_interval = 4 if os.environ.get("RENDER") == "true" else 3
+            ai_interval = 3 if os.environ.get("RENDER") == "true" else 2
             if f_idx % ai_interval == 0:
                 with ai_lock:
                     if ai_frame is None:
@@ -729,17 +739,16 @@ def _sync_generate_frames(video_source, ref_settings=None):
             for hid in list(hens.keys()):
                 b = hens[hid]["box"]
                 cx, cy = hens[hid]["center"]
-                exited_screen = (cx < 8 or cx > OUT_W - 8 or cy < 8 or cy > OUT_H - 8 or
-                                 b[2] < 5 or b[0] > OUT_W - 5 or b[3] < 5 or b[1] > OUT_H - 5)
-                lost_too_long = hens[hid]["lost"] > 20
+                exited_screen = (cx < 6 or cx > OUT_W - 6 or cy < 6 or cy > OUT_H - 6 or
+                                 b[2] < 4 or b[0] > OUT_W - 4 or b[3] < 4 or b[1] > OUT_H - 4)
+                lost_too_long = hens[hid]["lost"] > 25
                 if exited_screen or lost_too_long:
                     del hens[hid]
 
-            # 5. Visible hens: actively tracked on-screen
-            # When a hen exits the screen, its box leaves the screen cleanly within 0.25s
+            # 5. Visible hens: actively tracked on-screen with smooth persistence on low quality video
             render_hens = [
                 hid for hid, h in hens.items()
-                if h["lost"] <= 6 and (8 <= h["center"][0] <= OUT_W - 8 and 8 <= h["center"][1] <= OUT_H - 8)
+                if h["lost"] <= 14 and (4 <= h["center"][0] <= OUT_W - 4 and 4 <= h["center"][1] <= OUT_H - 4)
             ]
             
             # Sort for stable rendering order

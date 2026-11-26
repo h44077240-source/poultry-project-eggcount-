@@ -112,8 +112,15 @@ class OpticalHenTracker:
             try:
                 fh, fw = f.shape[:2]
                 infer_imgsz = 640
+                
+                # CLAHE contrast enhancement for low quality or poorly-lit video frames
+                lab = cv2.cvtColor(f, cv2.COLOR_BGR2LAB)
+                l_c, a_c, b_c = cv2.split(lab)
+                clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+                enhanced_f = cv2.cvtColor(cv2.merge([clahe.apply(l_c), a_c, b_c]), cv2.COLOR_LAB2BGR)
+
                 results = self.model.predict(
-                    source=f,
+                    source=enhanced_f,
                     verbose=False,
                     conf=0.04,
                     iou=0.55,
@@ -164,20 +171,12 @@ class OpticalHenTracker:
 
                         has_red = comb_px >= 2
                         scale_factor = max(fw, fh) / 640.0
-                        if has_red:
-                            ys, xs = np.where(crop_red)
-                            cx = x1 + float(np.median(xs))
-                            cy = y1 + float(np.median(ys))
-                            cw = float(np.percentile(xs, 95) - np.percentile(xs, 5))
-                            ch = float(np.percentile(ys, 95) - np.percentile(ys, 5))
-                            base_sz = max(14.0 * scale_factor, min(34.0 * scale_factor, max(cw, ch) + 4.0))
-                        else:
-                            cx = (x1 + x2) / 2.0
-                            cy = y1 + min(hh * 0.30, 16.0 * scale_factor)
-                            base_sz = max(14.0 * scale_factor, min(30.0 * scale_factor, max(hw * 0.5, hh * 0.5)))
-
-                        hw_box = base_sz / 2.0
-                        hh_box = base_sz / 2.0
+                        cx = (x1 + x2) / 2.0
+                        cy = (y1 + y2) / 2.0
+                        w_box = max(14.0 * scale_factor, min(float(hw) * 1.05, 85.0 * scale_factor))
+                        h_box = max(14.0 * scale_factor, min(float(hh) * 1.05, 90.0 * scale_factor))
+                        hw_box = w_box / 2.0
+                        hh_box = h_box / 2.0
                         box_final = [
                             max(0.0, float(cx - hw_box)),
                             max(0.0, float(cy - hh_box)),
@@ -308,19 +307,12 @@ class OpticalHenTracker:
                                 continue
 
                             has_red = comb_px >= 2
-                            if has_red:
-                                ys, xs = np.where(crop_red)
-                                cx = x1 + float(np.median(xs))
-                                cy = y1 + float(np.median(ys))
-                                w_comb = float(np.percentile(xs, 95) - np.percentile(xs, 5))
-                                h_comb = float(np.percentile(ys, 95) - np.percentile(ys, 5))
-                                base_sz = max(14.0 * scale_factor, min(34.0 * scale_factor, max(w_comb, h_comb) + 4.0))
-                            else:
-                                cx = (x1 + x2) / 2.0
-                                cy = y1 + min(hh * 0.30, 16.0 * scale_factor)
-                                base_sz = max(14.0 * scale_factor, min(32.0 * scale_factor, max(hw * 0.5, hh * 0.5)))
-
-                            hw_b, hh_b = base_sz / 2.0, base_sz / 2.0
+                            cx = (x1 + x2) / 2.0
+                            cy = (y1 + y2) / 2.0
+                            w_box = max(14.0 * scale_factor, min(float(hw) * 1.05, 85.0 * scale_factor))
+                            h_box = max(14.0 * scale_factor, min(float(hh) * 1.05, 90.0 * scale_factor))
+                            hw_b = w_box / 2.0
+                            hh_b = h_box / 2.0
                             box_final = [
                                 max(0.0, float(cx - hw_b)),
                                 max(0.0, float(cy - hh_b)),
