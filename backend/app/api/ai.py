@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.database.session import get_db
 from app.database.models import User, Evidence, AIVerification, AuditActionEnum, AIStatusEnum, EvidenceStatusEnum
 from app.schemas.schemas import AIVerifyResult
-from app.security.rbac import get_current_user
+from app.security.rbac import get_current_user, get_current_user_optional
 from app.services.audit import log_action
 from app.services.storage import storage
 
@@ -185,7 +185,7 @@ async def count_trays(
     file: UploadFile = File(None),
     confidence_threshold: float = Form(0.40),
     target: str = Form("trays"),
-    current_user: User = Depends(get_current_user)
+    current_user: Optional[User] = Depends(get_current_user_optional)
 ):
     """Detect and count only egg trays in an uploaded image and perform active learning."""
     actual_file = image if image else file
@@ -375,7 +375,7 @@ def _resolve_content_type(upload: UploadFile) -> str:
 async def analyze_egg_image(
     image: UploadFile = File(..., description="Photo of eggs / egg trays (jpg, jpeg, png, webp)"),
     target: str = Form("trays"),
-    current_user: User = Depends(get_current_user),
+    current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """
     POST /api/analyze-egg-image
@@ -493,7 +493,7 @@ async def analyze_dual_egg_images(
     top_image: UploadFile = File(..., description="Top view photo of egg trays"),
     side_image: UploadFile = File(..., description="Side view photo of egg trays"),
     target: str = Form("trays"),
-    current_user: User = Depends(get_current_user),
+    current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """
     Analyzes two images (Top View and Side View) to calculate total trays.

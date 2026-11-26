@@ -159,6 +159,15 @@ async def health():
         "environment": settings.ENVIRONMENT,
     }
 
+@app.get("/api/version", tags=["Health"])
+async def api_version():
+    return {
+        "status": "healthy",
+        "version": settings.APP_VERSION,
+        "build": "tight_comb_v2_anti_cluster",
+        "deploy_time": "2026-11-26T22:15:00+05:30",
+    }
+
 
 # ─── Static Frontend Serving (SPA) ──────────────────────────────────────────
 from fastapi.responses import FileResponse, StreamingResponse, Response

@@ -271,6 +271,10 @@ async def tracker_stop_stream():
         flask_app.current_live_count = 0
     return {"success": True}
 
+@router.get("/health")
+def tracker_health():
+    return {"status": "ok", "tracker": "online"}
+
 @router.get("/stream_count")
 async def tracker_stream_count():
     count = 0
