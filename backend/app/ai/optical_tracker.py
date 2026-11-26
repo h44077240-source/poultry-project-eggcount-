@@ -620,7 +620,7 @@ class OpticalHenTracker:
             z = getattr(self, '_zone', None)
             candidates = [
                 hid for hid, d in self.hens.items()
-                if d["lost"] <= 24 and d.get("hits", 0) >= 1 and (z is None or (z[0] <= d["center"][0] <= z[2] and z[1] <= d["center"][1] <= z[3])) and d["box"][1] > 2 and 3 <= d["center"][0] <= fw - 3 and 3 <= d["center"][1] <= fh - 3
+                if d["lost"] <= 2 and d.get("hits", 0) >= 1 and (z is None or (z[0] <= d["center"][0] <= z[2] and z[1] <= d["center"][1] <= z[3])) and d["box"][1] > 2 and 3 <= d["center"][0] <= fw - 3 and 3 <= d["center"][1] <= fh - 3
             ]
             candidates.sort(key=lambda hid: (-self.hens[hid].get("hits", 0), self.hens[hid]["lost"]))
 

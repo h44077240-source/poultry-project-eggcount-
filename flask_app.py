@@ -560,7 +560,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
             gray = cv2.cvtColor(display, cv2.COLOR_BGR2GRAY)
 
             # 1. Multi-point Lucas-Kanade Optical Flow on active hen heads inside zone
-            active_ids = [hid for hid, h in hens.items() if h["lost"] <= 8 and is_in_zone(*h["center"])]
+            active_ids = [hid for hid, h in hens.items() if h["lost"] <= 3 and is_in_zone(*h["center"])]
             if len(active_ids) > 0 and prev_gray is not None:
                 is_cloud = os.environ.get("RENDER") == "true"
                 hen_shifts = {hid: [] for hid in active_ids}
@@ -597,8 +597,8 @@ def _sync_generate_frames(video_source, ref_settings=None):
                     if status[i][0] == 1:
                         dx = float(pts_out[i][0][0] - pts_in_arr[i][0][0])
                         dy = float(pts_out[i][0][1] - pts_in_arr[i][0][1])
-                        # Clamp displacement: max 6px per frame prevents box drifting into neighboring hen
-                        if abs(dx) <= 6.0 and abs(dy) <= 6.0:
+                        # Allow actual camera & hen motion up to 24px per frame
+                        if abs(dx) <= 24.0 and abs(dy) <= 24.0:
                             hen_shifts[hid].append((dx, dy))
 
                 for hid, shifts in hen_shifts.items():
@@ -632,15 +632,14 @@ def _sync_generate_frames(video_source, ref_settings=None):
                 for d_idx, d in enumerate(fresh):
                     dcx, dcy = d["center"]
                     for hid, h in hens.items():
-                        if h["lost"] > 25:
+                        if h["lost"] > 6:
                             continue
                         hx, hy = h["center"]
                         dist = math.hypot(dcx - hx, dcy - hy)
                         iou = compute_iou(d["box"], h["box"])
                         # Match strictly against CURRENT position (no stale home matching)
-                        # Prevents box from jumping across to adjacent hen's comb
-                        if dist <= 36.0 or (dist <= 46.0 and iou >= 0.15):
-                            cost = (1.0 - iou) * 0.4 + (dist / 26.0) * 0.6
+                        if dist <= 24.0 or (dist <= 36.0 and iou >= 0.20):
+                            cost = (1.0 - iou) * 0.4 + (dist / 24.0) * 0.6
                             cands.append((cost, d_idx, hid))
 
                 cands.sort(key=lambda x: x[0])
@@ -680,11 +679,11 @@ def _sync_generate_frames(video_source, ref_settings=None):
                     if not (12 <= dcx <= OUT_W - 12 and 12 <= dcy <= OUT_H - 12):
                         continue
 
-                    # Anti-duplicate: Only reject if near an actively tracked hen (lost <= 12)
+                    # Anti-duplicate: Only reject if near an actively tracked live hen (lost <= 3)
                     # Prevents dead-zone drops while stopping duplicate IDs on the same hen
                     is_near = any(
-                        math.hypot(dcx - h["center"][0], dcy - h["center"][1]) < 22.0 or compute_iou(d["box"], h["box"]) > 0.35
-                        for h in hens.values() if h["lost"] <= 12
+                        math.hypot(dcx - h["center"][0], dcy - h["center"][1]) < 20.0 or compute_iou(d["box"], h["box"]) > 0.30
+                        for h in hens.values() if h["lost"] <= 3
                     )
                     if is_near:
                         continue
@@ -743,21 +742,40 @@ def _sync_generate_frames(video_source, ref_settings=None):
                     if ai_frame is None:
                         ai_frame = frame.copy()
 
-            # 4. Clean retirement: When a hen exits the screen, its box MUST leave the screen cleanly!
+            # 4. Clean retirement: When a hen exits the screen or has no comb, retire immediately!
             for hid in list(hens.keys()):
                 b = hens[hid]["box"]
                 cx, cy = hens[hid]["center"]
-                exited_screen = (cx < 6 or cx > OUT_W - 6 or cy < 6 or cy > OUT_H - 6 or
+                exited_screen = (cx < 4 or cx > OUT_W - 4 or cy < 4 or cy > OUT_H - 4 or
                                  b[2] < 4 or b[0] > OUT_W - 4 or b[3] < 4 or b[1] > OUT_H - 4)
-                lost_too_long = hens[hid]["lost"] > 25
+                lost_too_long = hens[hid]["lost"] > 4
                 if exited_screen or lost_too_long:
                     del hens[hid]
 
-            # 5. Visible hens: actively tracked on-screen with smooth persistence on low quality video
-            render_hens = [
+            # 5. Visible hens: ONLY render actively confirmed combs (lost <= 2).
+            # When a hen moves or leaves the screen, its box vanishes cleanly within 0.06s!
+            candidate_hens = [
                 hid for hid, h in hens.items()
-                if h["lost"] <= 18 and (4 <= h["center"][0] <= OUT_W - 4 and 4 <= h["center"][1] <= OUT_H - 4)
+                if h["lost"] <= 2 and (4 <= h["center"][0] <= OUT_W - 4 and 4 <= h["center"][1] <= OUT_H - 4)
             ]
+            # Spatial deduplication: Strictly PREVENT clusters of boxes in one place!
+            # If multiple tracks are near each other, only draw the single best/freshest one!
+            candidate_hens.sort(key=lambda hid: (hens[hid]["lost"], -hens[hid].get("hits", 0)))
+            render_hens = []
+            for hid in candidate_hens:
+                b1 = hens[hid]["box"]
+                c1 = hens[hid]["center"]
+                overlap = False
+                for r_hid in render_hens:
+                    b2 = hens[r_hid]["box"]
+                    c2 = hens[r_hid]["center"]
+                    dist = math.hypot(c1[0] - c2[0], c1[1] - c2[1])
+                    iou = compute_iou(b1, b2)
+                    if dist < 20.0 or iou > 0.30:
+                        overlap = True
+                        break
+                if not overlap:
+                    render_hens.append(hid)
             
             # Sort for stable rendering order
             render_hens.sort(key=lambda hid: hid)
