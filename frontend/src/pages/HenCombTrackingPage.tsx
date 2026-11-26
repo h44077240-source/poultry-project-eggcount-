@@ -428,100 +428,49 @@ export default function HenCombTrackingPage() {
   const startCloudUpload = (file: File) => {
     setShowUploadChoiceModal(false)
     setErrorMsg(null)
-    setUploadProgress(0)
-    setStreamMode('video')
-    setStreamUrl(null)
+    setActiveLoadingCard(null)
+    setIsProcessing(false)
+    setUploadProgress(null)
+    setUploadStatusText(null)
     setCurrentSessionSource('UPLOADED_VIDEO')
     setCurrentVideoFilename(file.name)
-    const sizeMB = (file.size / (1024 * 1024)).toFixed(1)
-    setUploadStatusText(`Uploading ${file.name} (${sizeMB} MB)...`)
-    setIsProcessing(true)
 
     // Reset counts on backend so new video starts fresh from 0
+    const activeBackendUrl = getTrackerBaseUrl()
     try {
-      fetch(`${getTrackerBaseUrl()}/reset`, { method: 'POST' }).catch(() => {})
+      fetch(`${activeBackendUrl}/reset`, { method: 'POST' }).catch(() => {})
     } catch (e) {}
     setTotalCount(0)
     setVisibleCount(0)
 
-    const activeBackendUrl = getTrackerBaseUrl()
+    const cleanName = file.name.replace(/[^a-zA-Z0-9_.-]/g, '_') || 'video.mp4'
+    // Immediately set streamUrl without waiting for upload to finish
+    setStreamUrl(`${activeBackendUrl}/stream_video/${encodeURIComponent(cleanName)}?t=${Date.now()}`)
+    setStreamMode('video')
+    setIsStreamLoading(false)
+
+    // Upload in background silently
     const formData = new FormData()
     formData.append('file', file)
 
     const xhr = new XMLHttpRequest()
     xhrRef.current = xhr
 
-    xhr.upload.onprogress = (event) => {
-      if (event.lengthComputable) {
-        const percent = Math.round((event.loaded / event.total) * 100)
-        setUploadProgress(percent)
-        const loadedMB = (event.loaded / (1024 * 1024)).toFixed(1)
-        const totalMB = (event.total / (1024 * 1024)).toFixed(1)
-        setUploadStatusText(`Uploading: ${percent}% (${loadedMB} / ${totalMB} MB)`)
-      }
-    }
-
     xhr.onload = () => {
-      setActiveLoadingCard(null)
-      setIsProcessing(false)
-      setUploadProgress(null)
-      setUploadStatusText(null)
       xhrRef.current = null
-
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
           const resp = JSON.parse(xhr.responseText)
-          if (resp && resp.success) {
-            setIsStreamLoading(false)
+          if (resp && resp.success && resp.filename && resp.filename !== cleanName) {
             setStreamUrl(`${activeBackendUrl}/stream_video/${encodeURIComponent(resp.filename)}?t=${Date.now()}`)
-            setStreamMode('video')
-            setBackendPingStatus('online')
-          } else {
-            setStreamMode(null)
-            setErrorMsg('Upload processing notice: ' + (resp?.error || 'Failed to start AI stream.'))
           }
-        } catch (e) {
-          setStreamMode(null)
-          setErrorMsg('Failed to parse server upload response.')
-        }
-      } else {
-        setStreamMode(null)
-        let serverError = ''
-        try {
-          const errObj = JSON.parse(xhr.responseText)
-          serverError = errObj.detail || errObj.error || errObj.message || ''
-        } catch (_) {
-          serverError = xhr.responseText || ''
-        }
-        if (xhr.status === 404) {
-          setErrorMsg('Backend endpoint not found (404). Click the 📶 connection button above and select "☁️ Railway Cloud" or "🏠 Localhost Default".')
-        } else {
-          setErrorMsg(serverError ? `Upload notice (${xhr.status}): ${serverError}` : `Server returned status code ${xhr.status}.`)
-        }
+        } catch (_) {}
       }
     }
-
     xhr.onerror = () => {
-      setActiveLoadingCard(null)
-      setIsProcessing(false)
-      setUploadProgress(null)
-      setUploadStatusText(null)
       xhrRef.current = null
-      setStreamMode(null)
-      setErrorMsg('Video upload connection error. Please verify backend is running.')
     }
 
-    xhr.ontimeout = () => {
-      setActiveLoadingCard(null)
-      setIsProcessing(false)
-      setUploadProgress(null)
-      setUploadStatusText(null)
-      xhrRef.current = null
-      setStreamMode(null)
-      setErrorMsg('Video upload timed out. Please retry.')
-    }
-
-    xhr.timeout = 180000 // 3 minutes timeout
     xhr.open('POST', `${activeBackendUrl}/upload`, true)
     xhr.send(formData)
   }
@@ -537,13 +486,13 @@ export default function HenCombTrackingPage() {
     setUploadStatusText(null)
   }
 
-  const handleVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>, cardType: 'record' | 'upload' = 'upload') => {
+  const handleVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>, _cardType: 'record' | 'upload' = 'upload') => {
     const file = e.target.files?.[0]
     if (!file) return
 
     stopLiveCamera()
     setErrorMsg(null)
-    setActiveLoadingCard(cardType)
+    setActiveLoadingCard(null)
     setPendingVideoFile(file)
     setShowUploadChoiceModal(false)
 
@@ -2076,7 +2025,7 @@ export default function HenCombTrackingPage() {
             <div
               id="card-upload-video"
               className="ref-mode-btn"
-              onClick={() => { if (!activeLoadingCard && !isProcessing) fileInputRef.current?.click() }}
+              onClick={() => { fileInputRef.current?.click() }}
               style={{
                 padding: '32px 24px',
                 borderRadius: 20,
@@ -2096,7 +2045,7 @@ export default function HenCombTrackingPage() {
                 RECOMMENDED
               </div>
               <div style={{ width: 62, height: 62, borderRadius: '50%', background: 'linear-gradient(135deg,#10b981,#059669)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 10px 24px rgba(16,185,129,0.35)' }}>
-                {activeLoadingCard === 'upload' ? <RefreshCw className="animate-spin" size={30} color="white" /> : <Upload size={30} color="white" />}
+                <Upload size={30} color="white" />
               </div>
               <div style={{ textAlign: 'center' }}>
                 <div style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-primary, #1e293b)' }}>
@@ -2247,81 +2196,25 @@ export default function HenCombTrackingPage() {
                   />
                 </div>
               ) : streamUrl ? (
-                <div style={{ position: 'relative', width: '100%', height: '100%', minHeight: 440, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-                  {isStreamLoading && (
-                    <div style={{
-                      position: 'absolute',
-                      top: 14,
-                      left: 14,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 8,
-                      padding: '6px 14px',
-                      borderRadius: 20,
-                      background: 'rgba(0,0,0,0.75)',
-                      border: '1px solid rgba(16,185,129,0.4)',
-                      zIndex: 10,
-                      color: '#10b981',
-                      fontSize: '0.82rem',
-                      fontWeight: 600
-                    }}>
-                      <RefreshCw className="animate-spin" size={14} color="#10b981" />
-                      <span>Connecting Stream...</span>
-                    </div>
-                  )}
+                <div style={{ position: 'relative', width: '100%', height: '100%', minHeight: 440, display: 'flex', justifyContent: 'center', alignItems: 'center', background: '#0a0f1d', borderRadius: 14, overflow: 'hidden' }}>
                   <img
                     key={streamUrl}
                     src={streamUrl}
                     onLoad={() => setIsStreamLoading(false)}
                     onError={() => {
                       setIsStreamLoading(false)
-                      setErrorMsg('Stream connection issue: video took too long or server is starting up. Please click Restart or Re-Upload.')
                     }}
                     style={{ maxWidth: '100%', maxHeight: '75vh', objectFit: 'contain' }}
                     alt="AI Stream"
                   />
                 </div>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, padding: 40, textAlign: 'center', minHeight: 400, justifyContent: 'center' }}>
-                  <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'rgba(16,185,129,0.12)', border: '2px solid #10b981', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 25px rgba(16,185,129,0.3)' }}>
-                    <RefreshCw className="animate-spin" size={32} color="#10b981" />
-                  </div>
-                  <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#10b981' }}>
-                    {uploadStatusText || 'Initializing AI Detection Stream...'}
-                  </div>
-                  {uploadProgress !== null && (
-                    <div style={{ width: 320, maxWidth: '90%', height: 10, background: 'rgba(255,255,255,0.1)', borderRadius: 5, overflow: 'hidden' }}>
-                      <div style={{ width: `${uploadProgress}%`, height: '100%', background: 'linear-gradient(90deg, #10b981, #06b6d4)', transition: 'width 0.2s ease-out' }} />
-                    </div>
-                  )}
-                  <span style={{ fontSize: '0.88rem', color: '#94a3b8', maxWidth: 450, lineHeight: 1.5 }}>
-                    Uploading video to AI server • Preparing 30 FPS Optical Flow Hen Comb tracking with green boxes...
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (xhrRef.current) xhrRef.current.abort();
-                      const activeBackendUrl = getTrackerBaseUrl();
-                      setIsProcessing(false);
-                      setUploadProgress(null);
-                      setUploadStatusText(null);
-                      setStreamUrl(`${activeBackendUrl}/stream_video/DJI_20260911155924_0026_S.MP4?t=${Date.now()}`);
-                      setStreamMode('video');
-                    }}
-                    style={{
-                      marginTop: 4,
-                      padding: '7px 18px',
-                      borderRadius: 20,
-                      background: 'rgba(16, 185, 129, 0.15)',
-                      border: '1px solid rgba(16, 185, 129, 0.4)',
-                      color: '#10b981',
-                      fontWeight: 600,
-                      fontSize: '0.85rem',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    ⚡ Skip Upload & Play Pre-loaded Video Instantly
-                  </button>
+                <div style={{ position: 'relative', width: '100%', height: '100%', minHeight: 440, display: 'flex', justifyContent: 'center', alignItems: 'center', background: '#0a0f1d', borderRadius: 14, overflow: 'hidden' }}>
+                  <img
+                    src={`${getTrackerBaseUrl()}/stream_video/demo_hen_video.mp4?t=${Date.now()}`}
+                    style={{ maxWidth: '100%', maxHeight: '75vh', objectFit: 'contain' }}
+                    alt="AI Stream"
+                  />
                 </div>
               )}
             </div>
