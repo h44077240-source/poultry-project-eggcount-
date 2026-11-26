@@ -17,6 +17,10 @@ class Settings(BaseSettings):
 
     # Database
     DATABASE_URL: str = "sqlite:///./giotag.db"
+    DB_POOL_SIZE: int = 25
+    DB_MAX_OVERFLOW: int = 35
+    DB_POOL_TIMEOUT: int = 20
+    DB_POOL_RECYCLE: int = 1800
 
     # Security
     SECRET_KEY: str = "changeme-super-secret-jwt-key-minimum-32-characters-long"
@@ -69,8 +73,8 @@ class Settings(BaseSettings):
     # GPS
     GPS_ACCURACY_THRESHOLD_METERS: float = 50.0
 
-    # Rate Limiting & Account Lockout
-    LOGIN_RATE_LIMIT_PER_MINUTE: int = 10
+    # Rate Limiting & Account Lockout (Optimized for 50-100 concurrent users)
+    LOGIN_RATE_LIMIT_PER_MINUTE: int = 120
     ACCOUNT_LOCKOUT_MAX_ATTEMPTS: int = 5
     ACCOUNT_LOCKOUT_MINUTES: int = 15
     REDIS_URL: Optional[str] = None

@@ -112,14 +112,13 @@ async def send_lockout_notification(email: str, reset_link: str):
 class AuthSecurityManager:
     """
     Enterprise-grade authentication security guard:
-    - Max 10 requests / IP / min -> 429 Too Many Requests
-    - Progressive delays on consecutive failed logins (0s, 1s, 2s, 4s...)
+    - High-throughput rate limit (120 req / IP / min, configurable)
+    - Progressive delays on consecutive failed logins for specific account
     - 5 consecutive failed attempts -> 15 min account lockout
     - Dispatches reset link email upon lockout
     - Never reveals lock state on login attempt (always generic 401)
     """
 
-    IP_RATE_LIMIT_MAX = 10         # Max 10 attempts per IP
     IP_RATE_LIMIT_WINDOW = 60      # 1 minute window
     MAX_FAILED_ATTEMPTS = 5        # 5 consecutive failures before lock
     LOCKOUT_DURATION_SECONDS = 900 # 15 minutes lockout (15 * 60)
@@ -128,26 +127,45 @@ class AuthSecurityManager:
     def __init__(self, store: Optional[InMemoryStore] = None):
         self.store = store or _memory_store
 
+    @property
+    def ip_rate_limit_max(self) -> int:
+        return getattr(settings, "LOGIN_RATE_LIMIT_PER_MINUTE", 120)
+
     @staticmethod
     def get_client_ip(request: Request) -> str:
-        """Extract true client IP honoring reverse proxies (Cloudflare, Render, AWS)."""
+        """Extract true client IP honoring reverse proxies (Cloudflare, Railway, Render, AWS)."""
+        # 1. Cloudflare header
+        cf_ip = request.headers.get("CF-Connecting-IP")
+        if cf_ip:
+            return cf_ip.strip()
+
+        # 2. X-Real-IP header
+        real_ip = request.headers.get("X-Real-IP")
+        if real_ip:
+            return real_ip.strip()
+
+        # 3. X-Forwarded-For (client is first element)
         forwarded = request.headers.get("X-Forwarded-For")
         if forwarded:
-            return forwarded.split(",")[0].strip()
+            first_ip = forwarded.split(",")[0].strip()
+            if first_ip:
+                return first_ip
+
         if request.client and request.client.host:
             return request.client.host
         return "127.0.0.1"
 
     async def check_ip_rate_limit(self, request: Request):
-        """Enforces max 10 requests per IP per minute."""
+        """Enforces high-capacity sliding-window rate limit per IP per minute."""
         ip = self.get_client_ip(request)
         hits = await self.store.record_ip_hit(ip, window_seconds=self.IP_RATE_LIMIT_WINDOW)
-        if hits > self.IP_RATE_LIMIT_MAX:
-            logger.warning(f"[RATE LIMIT] IP {ip} exceeded 10 login requests in 60s (hits={hits})")
+        max_allowed = self.ip_rate_limit_max
+        if hits > max_allowed:
+            logger.warning(f"[RATE LIMIT] IP {ip} exceeded {max_allowed} login requests in 60s (hits={hits})")
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail="Too many login attempts from this IP. Please try again later.",
-                headers={"Retry-After": "60"}
+                detail="Too many login attempts from this network. Please wait a moment and try again.",
+                headers={"Retry-After": "30"}
             )
 
     async def pre_login_check(self, identifier: str) -> Tuple[bool, float]:
@@ -170,9 +188,9 @@ class AuthSecurityManager:
         # 2. Compute progressive delay based on consecutive failed attempts
         failed_count = await self.store.get(fail_key) or 0
         delay = 0.0
-        if failed_count > 0:
-            # Progressive backoff: Attempt 2 = 1.0s, Attempt 3 = 2.0s, Attempt 4 = 4.0s
-            delay = min(8.0, self.BASE_PROGRESSIVE_DELAY * math.pow(2, failed_count - 1))
+        if failed_count >= 3:
+            # Progressive backoff only after 3 consecutive failures: Attempt 3 = 1.0s, Attempt 4 = 2.0s
+            delay = min(5.0, self.BASE_PROGRESSIVE_DELAY * math.pow(2, failed_count - 3))
             logger.info(f"[SECURITY DELAY] Enforcing {delay:.2f}s progressive delay for: {clean_id} (attempts={failed_count})")
             await asyncio.sleep(delay)
 

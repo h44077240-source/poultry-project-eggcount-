@@ -20,6 +20,7 @@ export default function LoginPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (submitting) return
     setError('')
     setSubmitting(true)
     try {
@@ -27,18 +28,29 @@ export default function LoginPage() {
       toast.success('Welcome back!')
       navigate('/')
     } catch (err: any) {
-      const msg = err?.response?.data?.detail || 'Login failed. Check your credentials.'
-      setError(msg)
-      toast.error(msg)
+      if (err?.response?.status === 429) {
+        const retryAfter = err?.response?.headers?.['retry-after'] || '30'
+        const msg = `Rate limit: Too many requests from your network. Please wait ${retryAfter} seconds and try again.`
+        setError(msg)
+        toast.error(msg)
+      } else if (!err?.response) {
+        const msg = 'Network error or server busy. Please check your connection and retry.'
+        setError(msg)
+        toast.error(msg)
+      } else {
+        const msg = err?.response?.data?.detail || 'Login failed. Check your credentials.'
+        setError(msg)
+        toast.error(msg)
+      }
     } finally {
       setSubmitting(false)
     }
   }
 
   const quickLogin = async (preset: { email: string; password: string }) => {
+    if (submitting) return
     setEmail(preset.email)
     setPassword(preset.password)
-    // Auto-submit immediately with the preset credentials
     setError('')
     setSubmitting(true)
     try {
@@ -46,9 +58,20 @@ export default function LoginPage() {
       toast.success('Welcome back!')
       navigate('/')
     } catch (err: any) {
-      const msg = err?.response?.data?.detail || 'Login failed. Check your credentials.'
-      setError(msg)
-      toast.error(msg)
+      if (err?.response?.status === 429) {
+        const retryAfter = err?.response?.headers?.['retry-after'] || '30'
+        const msg = `Rate limit: Too many requests from your network. Please wait ${retryAfter} seconds and try again.`
+        setError(msg)
+        toast.error(msg)
+      } else if (!err?.response) {
+        const msg = 'Network error or server busy. Please check your connection and retry.'
+        setError(msg)
+        toast.error(msg)
+      } else {
+        const msg = err?.response?.data?.detail || 'Login failed. Check your credentials.'
+        setError(msg)
+        toast.error(msg)
+      }
     } finally {
       setSubmitting(false)
     }
@@ -166,6 +189,7 @@ export default function LoginPage() {
                   type="button"
                   className="btn btn-secondary btn-sm demo-btn"
                   onClick={() => quickLogin(acc)}
+                  disabled={submitting}
                 >
                   {acc.label}
                 </button>

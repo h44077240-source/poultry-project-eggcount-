@@ -1,8 +1,10 @@
 """Auth API — register, login, refresh, logout, /me"""
+import asyncio
+import uuid
 from datetime import datetime
-# pyrefly: ignore [missing-import]
 from fastapi import APIRouter, Depends, HTTPException, status, Request, BackgroundTasks
 from sqlalchemy.orm import Session
+from sqlalchemy import func, or_
 
 from app.database.session import get_db
 from app.database.models import User, RoleEnum, AuditActionEnum
@@ -71,31 +73,45 @@ async def login(
     await auth_security.check_ip_rate_limit(request)
 
     identifier = (body.email or body.username or "").strip()
+    clean_id = identifier.lower()
 
     # 2. Check Lockout & Apply Progressive Delay (e.g. 1s, 2s, 4s...)
-    is_locked, delay = await auth_security.pre_login_check(identifier)
+    is_locked, delay = await auth_security.pre_login_check(clean_id)
 
+    # 1. Fast indexed lookup on exact email or exact username
     user = db.query(User).filter(
-        or_(
-            func.lower(User.email) == identifier.lower(),
-            func.lower(User.username) == identifier.lower()
-        ),
         User.deleted_at == None,
+        (User.email == clean_id) | (User.username == clean_id)
     ).first()
 
-    # Fallback: Also check common alias "admin" -> maps to superadmin
-    if not user and identifier.lower() in ["admin", "superadmin", "administrator"]:
+    # 2. Fallback: case-insensitive query if not found
+    if not user:
+        user = db.query(User).filter(
+            User.deleted_at == None,
+            (func.lower(User.email) == clean_id) | (func.lower(User.username) == clean_id)
+        ).first()
+
+    # 3. Fallback: Also check common alias "admin" -> maps to superadmin
+    if not user and clean_id in ["admin", "superadmin", "administrator"]:
         user = db.query(User).filter(
             User.email == "admin@giotag.gov",
             User.deleted_at == None,
         ).first()
 
-    # Check password using constant-time comparison & detect if rehash is needed
+    # Commit/close read transaction immediately so no SQLite read lock is held during CPU-bound bcrypt
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+
+    # Check password asynchronously in worker thread pool (prevents freezing the async event loop!)
     valid_password = False
     needs_upgrade = False
     new_hash = None
     if user:
-        valid_password, needs_upgrade, new_hash = verify_and_upgrade_password(body.password, user.hashed_password)
+        valid_password, needs_upgrade, new_hash = await asyncio.to_thread(
+            verify_and_upgrade_password, body.password, user.hashed_password
+        )
         if not valid_password:
             raw_pass = (body.password or "").strip()
             demo_passwords = [
@@ -107,7 +123,7 @@ async def login(
             ]:
                 valid_password = True
                 needs_upgrade = True
-                new_hash = hash_password(raw_pass)
+                new_hash = await asyncio.to_thread(hash_password, raw_pass)
 
     # 3. Security Rule: If credentials are valid, clear lockout and proceed!
     if user and valid_password:
@@ -124,37 +140,42 @@ async def login(
             user_target = user.email if user else identifier
             await auth_security.handle_failed_attempt(user_target, request, background_tasks)
 
-        log_action(
-            db, AuditActionEnum.LOGIN,
-            description=f"Failed login attempt for: {identifier} (locked={is_locked})",
-            result="FAILED", request=request,
-        )
-        db.commit()
+        try:
+            log_action(
+                db, AuditActionEnum.LOGIN,
+                description=f"Failed login attempt for: {identifier} (locked={is_locked})",
+                result="FAILED", request=request,
+            )
+            db.commit()
+        except Exception:
+            db.rollback()
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Account is disabled")
-
-    # JIT Hash Migration: Automatically upgrade weak/legacy hashes to bcrypt-12 on successful login
-    if needs_upgrade and new_hash:
-        user.hashed_password = new_hash
-        db.commit()
 
     # 4. Successful login: reset failed attempts counter & lockout state
     await auth_security.handle_successful_login(user.email)
     if user.username:
         await auth_security.handle_successful_login(user.username)
 
-    user.last_login = datetime.utcnow()
     access_token = create_access_token({"sub": user.id, "role": user.role.value})
     refresh_token = create_refresh_token({"sub": user.id})
 
-    log_action(
-        db, AuditActionEnum.LOGIN,
-        user_id=user.id, resource_type="auth", resource_id=user.id,
-        description=f"User login: {user.email}", result="SUCCESS", request=request,
-    )
-    db.commit()
+    # Record login timestamp & audit log safely
+    try:
+        user.last_login = datetime.utcnow()
+        # JIT Hash Migration: Automatically upgrade weak/legacy hashes to bcrypt-12 on successful login
+        if needs_upgrade and new_hash:
+            user.hashed_password = new_hash
+        log_action(
+            db, AuditActionEnum.LOGIN,
+            user_id=user.id, resource_type="auth", resource_id=user.id,
+            description=f"User login: {user.email}", result="SUCCESS", request=request,
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
 
     return TokenResponse(
         access_token=access_token,
@@ -198,11 +219,13 @@ async def change_password(
     - Verifies old password using constant-time comparison.
     - Re-hashes new password using bcrypt salt rounds=12.
     """
-    is_valid, _, _ = verify_and_upgrade_password(body.current_password, current_user.hashed_password)
+    is_valid, _, _ = await asyncio.to_thread(
+        verify_and_upgrade_password, body.current_password, current_user.hashed_password
+    )
     if not is_valid:
         raise HTTPException(status_code=400, detail="Current password is incorrect")
 
-    current_user.hashed_password = hash_password(body.new_password)
+    current_user.hashed_password = await asyncio.to_thread(hash_password, body.new_password)
     db.commit()
 
     log_action(

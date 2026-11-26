@@ -26,17 +26,34 @@ if db_url.startswith("postgres://"):
 
 # Create engine with appropriate settings per DB type
 if db_url.startswith("sqlite"):
+    from sqlalchemy.pool import NullPool
+    from sqlalchemy import event
+
     engine = create_engine(
         db_url,
-        connect_args={"check_same_thread": False},
+        connect_args={"check_same_thread": False, "timeout": 30.0},
+        poolclass=NullPool,
         echo=settings.DEBUG,
     )
+    # Enable non-blocking WAL mode and 30s busy timeout for high-concurrency SQLite
+    @event.listens_for(engine, "connect")
+    def set_sqlite_pragma(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA busy_timeout=30000")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.close()
 else:
+    pool_size = getattr(settings, "DB_POOL_SIZE", 25)
+    max_overflow = getattr(settings, "DB_MAX_OVERFLOW", 35)
+    pool_timeout = getattr(settings, "DB_POOL_TIMEOUT", 20)
+    pool_recycle = getattr(settings, "DB_POOL_RECYCLE", 1800)
     engine = create_engine(
         db_url,
         pool_pre_ping=True,
-        pool_size=10,
-        max_overflow=20,
+        pool_size=pool_size,
+        max_overflow=max_overflow,
+        pool_timeout=pool_timeout,
+        pool_recycle=pool_recycle,
         echo=settings.DEBUG,
     )
 
@@ -64,7 +81,7 @@ def create_tables():
                 try:
                     backend_dir = Path(__file__).resolve().parent.parent.parent
                     fallback_url = f"sqlite:///{backend_dir / 'giotag.db'}"
-                    engine = create_engine(fallback_url, connect_args={"check_same_thread": False})
+                    engine = create_engine(fallback_url, connect_args={"check_same_thread": False, "timeout": 30.0})
                     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
                     Base.metadata.create_all(bind=engine)
                     print("[OK] Local SQLite fallback database initialized.")
