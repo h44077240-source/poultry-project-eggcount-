@@ -173,11 +173,68 @@ def detect_objects_image(image: np.ndarray, conf_threshold: float = 0.35, iou_th
         class_names = getattr(result, "names", {0: "HEN_COMB"})
         process_boxes(result.boxes, class_names)
 
-    # Process dedicated egg/tray model results
+    # Process dedicated egg/tray model results with intelligent geometry & clutter rejection
     if egg_results:
         for result in egg_results:
-            class_names = getattr(result, "names", {0: "egg_tray"})
-            process_boxes(result.boxes, class_names)
+            if len(result.boxes) > 0:
+                raw_boxes = result.boxes.xyxy.cpu().numpy()
+                raw_confs = result.boxes.conf.cpu().numpy()
+                widths = raw_boxes[:, 2] - raw_boxes[:, 0]
+                heights = raw_boxes[:, 3] - raw_boxes[:, 1]
+                ar = widths / np.maximum(heights, 1)
+                median_ar = float(np.median(ar)) if len(ar) > 0 else 1.0
+
+                if median_ar > 1.8:
+                    # Side view perspective: eliminate ground cracks, sky, and isolated clutter
+                    try:
+                        from app.ai.egg_tray_service import filter_and_validate_side_boxes
+                        valid_cols = filter_and_validate_side_boxes(raw_boxes, raw_confs, image.shape)
+                        for col_b, col_c in valid_cols:
+                            for b, c in zip(col_b, col_c):
+                                x1, y1, x2, y2 = b
+                                tray_count += 1
+                                det_id = tray_count
+                                conf = float(c)
+                                tray_conf_sum += conf
+                                detections.append({
+                                    "id": det_id,
+                                    "class": "egg_tray",
+                                    "confidence": round(conf, 3),
+                                    "bbox": [int(x1), int(y1), int(x2), int(y2)]
+                                })
+                                cv2.rectangle(annotated_image, (int(x1), int(y1)), (int(x2), int(y2)), (255, 140, 0), 2)
+                                label = f"EGG TRAY {tray_count} ({int(conf*100)}%)"
+                                (lw, lh), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
+                                cv2.rectangle(annotated_image, (int(x1), max(0, int(y1) - lh - 4)), (int(x1) + lw + 4, int(y1)), (255, 140, 0), -1)
+                                cv2.putText(annotated_image, label, (int(x1) + 2, max(lh + 1, int(y1) - 2)), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1, cv2.LINE_AA)
+                    except Exception:
+                        class_names = getattr(result, "names", {0: "egg_tray"})
+                        process_boxes(result.boxes, class_names)
+                else:
+                    # Top view perspective: eliminate mesh clutter and split seams
+                    try:
+                        from app.ai.egg_tray_service import filter_top_view_trays
+                        filt_b, filt_c = filter_top_view_trays(raw_boxes, raw_confs)
+                        for b, c in zip(filt_b, filt_c):
+                            x1, y1, x2, y2 = b
+                            tray_count += 1
+                            det_id = tray_count
+                            conf = float(c)
+                            tray_conf_sum += conf
+                            detections.append({
+                                "id": det_id,
+                                "class": "egg_tray",
+                                "confidence": round(conf, 3),
+                                "bbox": [int(x1), int(y1), int(x2), int(y2)]
+                            })
+                            cv2.rectangle(annotated_image, (int(x1), int(y1)), (int(x2), int(y2)), (255, 140, 0), 2)
+                            label = f"EGG TRAY {tray_count} ({int(conf*100)}%)"
+                            (lw, lh), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
+                            cv2.rectangle(annotated_image, (int(x1), max(0, int(y1) - lh - 4)), (int(x1) + lw + 4, int(y1)), (255, 140, 0), -1)
+                            cv2.putText(annotated_image, label, (int(x1) + 2, max(lh + 1, int(y1) - 2)), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1, cv2.LINE_AA)
+                    except Exception:
+                        class_names = getattr(result, "names", {0: "egg_tray"})
+                        process_boxes(result.boxes, class_names)
         
     # Process tray model results if present
     if tray_results:

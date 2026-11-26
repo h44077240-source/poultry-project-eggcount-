@@ -144,13 +144,40 @@ def group_columns(side_boxes: np.ndarray) -> List[np.ndarray]:
     return columns
 
 
+def nms_boxes(boxes: np.ndarray, confs: np.ndarray, iou_thresh: float = 0.30) -> Tuple[np.ndarray, np.ndarray]:
+    """Applies Non-Maximum Suppression to remove overlapping duplicate boxes."""
+    if len(boxes) == 0:
+        return np.array([]), np.array([])
+    x1 = boxes[:, 0]
+    y1 = boxes[:, 1]
+    x2 = boxes[:, 2]
+    y2 = boxes[:, 3]
+    areas = (x2 - x1) * (y2 - y1)
+    order = confs.argsort()[::-1]
+    keep = []
+    while order.size > 0:
+        i = order[0]
+        keep.append(i)
+        xx1 = np.maximum(x1[i], x1[order[1:]])
+        yy1 = np.maximum(y1[i], y1[order[1:]])
+        xx2 = np.minimum(x2[i], x2[order[1:]])
+        yy2 = np.minimum(y2[i], y2[order[1:]])
+        w = np.maximum(0.0, xx2 - xx1)
+        h = np.maximum(0.0, yy2 - yy1)
+        inter = w * h
+        ovr = inter / (areas[i] + areas[order[1:]] - inter)
+        inds = np.where(ovr <= iou_thresh)[0]
+        order = order[inds + 1]
+    return boxes[keep], confs[keep]
+
+
 def filter_and_validate_side_boxes(boxes: np.ndarray, confs: np.ndarray, img_shape: tuple) -> List[Tuple[np.ndarray, np.ndarray]]:
     """
     Strictly filters out background clutter (road cracks, ground shadows, trees, poles):
-    1. Aspect ratio: in side view, a tray is a thin horizontal slice (AR >= 1.8).
-    2. Width consistency: rejects wide road cracks that span across stacks.
+    1. Aspect ratio: in side view, a tray is a thin horizontal slice (AR >= 2.0).
+    2. Width consistency: rejects wide road cracks (w > 1.35x normal) and small fragments.
     3. Column grouping: clusters trays into stacked columns.
-    4. Vertical continuity: removes isolated outliers separated by large vertical gaps.
+    4. Vertical continuity: removes isolated outliers (ground cracks with gap > 1.9x tray height).
     """
     if len(boxes) == 0:
         return []
@@ -159,8 +186,8 @@ def filter_and_validate_side_boxes(boxes: np.ndarray, confs: np.ndarray, img_sha
     heights = boxes[:, 3] - boxes[:, 1]
     aspect_ratios = widths / np.maximum(heights, 1)
 
-    # 1. Aspect ratio filter: individual trays must be horizontal slices
-    mask = (aspect_ratios >= 1.8) & (widths < img_shape[1] * 0.6)
+    # 1. Aspect ratio filter: individual trays must be horizontal slices (AR >= 2.0)
+    mask = (aspect_ratios >= 2.0) & (heights >= 5) & (confs >= 0.18)
     if np.sum(mask) == 0:
         return []
 
@@ -173,8 +200,8 @@ def filter_and_validate_side_boxes(boxes: np.ndarray, confs: np.ndarray, img_sha
     ref_w = np.median(c_widths)
     ref_h = np.median(c_heights)
 
-    # 2. Width consistency: reject cracks that are significantly wider than normal trays
-    width_mask = (c_widths >= ref_w * 0.6) & (c_widths <= ref_w * 1.45)
+    # 2. Width consistency: reject cracks that are wider than 1.35x normal trays, or too narrow
+    width_mask = (c_widths >= ref_w * 0.70) & (c_widths <= ref_w * 1.35)
     c_boxes = c_boxes[width_mask]
     c_confs = c_confs[width_mask]
 
@@ -194,7 +221,7 @@ def filter_and_validate_side_boxes(boxes: np.ndarray, confs: np.ndarray, img_sha
         b_x = (b[0] + b[2]) / 2
         prev_x = np.mean([(cb[0] + cb[2]) / 2 for cb in current_col])
 
-        if abs(b_x - prev_x) < (ref_w * 0.5):
+        if abs(b_x - prev_x) < (ref_w * 0.45):
             current_col.append(b)
             current_confs.append(c_confs[idx])
         else:
@@ -230,8 +257,9 @@ def filter_and_validate_side_boxes(boxes: np.ndarray, confs: np.ndarray, img_sha
             if i < len(col_boxes) - 1:
                 dists.append(abs(y_centers[i + 1] - y_centers[i]))
             min_dist = min(dists) if dists else 999.0
-            # If no neighbouring tray exists within 3.5x normal height, it's an outlier (e.g. road crack)
-            if min_dist > (box_h * 3.5):
+            # Real stacked trays are right next to each other (pitch <= 1.9x tray height).
+            # Anything further apart is an outlier (ground crack, sky, distant reflection).
+            if min_dist > (box_h * 1.9):
                 keep[i] = False
 
         filtered_col = col_boxes[keep]
@@ -266,9 +294,10 @@ def draw_validated_side_detections(img: np.ndarray, valid_columns: List[Tuple[np
 def filter_top_view_trays(boxes: np.ndarray, confs: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     """
     Strictly filters top view egg tray detections:
-    1. Rejects non-square detections (horizontal seams, borders with AR > 1.6 or AR < 0.65).
-    2. Rejects tiny fragments / floor mesh clutter whose area is < 35% of median tray area.
+    1. Rejects non-square detections (horizontal seams, split lines with AR > 1.50 or AR < 0.70).
+    2. Rejects tiny fragments / wire mesh clutter whose area is < 40% of median tray area.
     3. Rejects low confidence clutter (< 0.50, with fallback to 0.40 only if zero candidates).
+    4. Applies Non-Maximum Suppression (IoU <= 0.30) to eliminate split horizontal overlapping boxes.
     """
     if len(boxes) == 0:
         return np.array([]), np.array([])
@@ -279,9 +308,9 @@ def filter_top_view_trays(boxes: np.ndarray, confs: np.ndarray) -> Tuple[np.ndar
     areas = widths * heights
 
     # 1. Top view trays are approximately square
-    shape_mask = (aspect_ratios >= 0.70) & (aspect_ratios <= 1.55) & (confs >= 0.50)
+    shape_mask = (aspect_ratios >= 0.70) & (aspect_ratios <= 1.50) & (confs >= 0.50)
     if np.sum(shape_mask) == 0:
-        shape_mask = (aspect_ratios >= 0.65) & (aspect_ratios <= 1.65) & (confs >= 0.40)
+        shape_mask = (aspect_ratios >= 0.65) & (aspect_ratios <= 1.55) & (confs >= 0.40)
 
     if np.sum(shape_mask) == 0:
         return np.array([]), np.array([])
@@ -295,13 +324,14 @@ def filter_top_view_trays(boxes: np.ndarray, confs: np.ndarray) -> Tuple[np.ndar
     ref_area = np.median(c_areas)
     ref_width = np.median(c_widths)
 
-    # Any box smaller than 35% of median area or 50% of median width is background clutter (floor, mesh, etc.)
-    size_mask = (c_areas >= ref_area * 0.35) & (c_widths >= ref_width * 0.50)
+    # Any box smaller than 40% of median area or 55% of median width is background clutter (wire mesh, floor patches, etc.)
+    size_mask = (c_areas >= ref_area * 0.40) & (c_widths >= ref_width * 0.55)
 
     final_boxes = c_boxes[size_mask]
     final_confs = c_confs[size_mask]
 
-    return final_boxes, final_confs
+    # 3. Apply NMS (IoU <= 0.30) to eliminate overlapping split boxes
+    return nms_boxes(final_boxes, final_confs, iou_thresh=0.30)
 
 
 def draw_validated_top_detections(img: np.ndarray, boxes: np.ndarray, confs: np.ndarray) -> np.ndarray:
@@ -477,4 +507,5 @@ def analyze_dual_egg_trays(img1_bytes: bytes, img2_bytes: bytes) -> Dict[str, An
         "top_annotated_image": top_b64,
         "side_annotated_image": side_b64,
         "annotated_image": side_b64,
+        "auto_swapped": auto_swapped,
     }

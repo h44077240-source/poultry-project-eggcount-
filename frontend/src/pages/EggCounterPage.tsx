@@ -570,6 +570,17 @@ export default function EggCounterPage() {
     }
   }
 
+  const handleSwapViews = () => {
+    const tempFile = topFile
+    const tempUrl = topPreviewUrl
+    setTopFile(sideFile)
+    setTopPreviewUrl(sidePreviewUrl)
+    setSideFile(tempFile)
+    setSidePreviewUrl(tempUrl)
+    setOpenaiResult(null)
+    setYoloResult(null)
+  }
+
   const handleAnalyze = async () => {
     if (mode === 'dual_ai' && (!topFile || !sideFile)) return
     if (mode !== 'dual_ai' && !selectedFile) return
@@ -1242,18 +1253,61 @@ export default function EggCounterPage() {
               </button>
 
           {mode === 'dual_ai' && (topFile || sideFile) && (
-            <div style={{ marginBottom: 24 }}>
+            <div style={{ marginBottom: 24, padding: 12, borderRadius: 8, background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)' }}>
               {topFile && (
-                <div style={{ marginBottom: 12 }}>
-                  <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: 4 }}>Top View File:</div>
-                  <div style={{ fontWeight: 500, wordBreak: 'break-all' }}>{topFile.name}</div>
+                <div style={{ marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Top View (Stacks): </span>
+                    <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>{topFile.name}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => { setTopFile(null); setTopPreviewUrl(null); }}
+                    style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '0.8rem' }}
+                  >
+                    Remove
+                  </button>
                 </div>
               )}
               {sideFile && (
-                <div>
-                  <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: 4 }}>Side View File:</div>
-                  <div style={{ fontWeight: 500, wordBreak: 'break-all' }}>{sideFile.name}</div>
+                <div style={{ marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Side View (Layers): </span>
+                    <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>{sideFile.name}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => { setSideFile(null); setSidePreviewUrl(null); }}
+                    style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '0.8rem' }}
+                  >
+                    Remove
+                  </button>
                 </div>
+              )}
+              {topFile && sideFile && (
+                <button
+                  type="button"
+                  onClick={handleSwapViews}
+                  className="btn"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6,
+                    width: '100%',
+                    padding: '8px 12px',
+                    fontSize: '0.85rem',
+                    fontWeight: 600,
+                    marginTop: 8,
+                    background: 'rgba(59, 130, 246, 0.1)',
+                    color: '#3b82f6',
+                    border: '1px solid rgba(59, 130, 246, 0.3)',
+                    borderRadius: 6,
+                    cursor: 'pointer'
+                  }}
+                >
+                  <RefreshCw size={15} /> Swap Top & Side Views (Switch Positions)
+                </button>
               )}
             </div>
           )}
@@ -1793,21 +1847,27 @@ export default function EggCounterPage() {
                       fontWeight: 700,
                       fontSize: '1rem',
                       display: 'flex',
+                      flexDirection: 'column',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      gap: 8,
+                      gap: 6,
                       textAlign: 'center'
                     }}>
-                      <span>
+                      <div>
                         ✨ ML Dual View: {(openaiResult as any).num_stacks} Stacks (Top)
                         {(openaiResult as any).col_heights && (openaiResult as any).col_heights.length > 1
                           ? ` | Columns: ${(openaiResult as any).col_heights.join(' + ')} = ${openaiResult.tray_count} Trays`
                           : ` × ${(openaiResult as any).stack_height} Layers = ${openaiResult.tray_count} Trays`}
                         {` (${openaiResult.egg_count} Eggs)`}
-                      </span>
+                      </div>
+                      {(openaiResult as any).auto_swapped && (
+                        <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#047857' }}>
+                          🔄 Perspectives Auto-Aligned: Top and Side view orientations detected and matched automatically.
+                        </div>
+                      )}
                     </div>
                   )}
-                  {topPreviewUrl && (
+                  {((openaiResult as any)?.top_annotated_image || topPreviewUrl || sidePreviewUrl) && (
                     <div>
                       <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <span>Top View {(openaiResult as any)?.top_annotated_image ? 'AI Detections (Stacks)' : 'Image'}</span>
@@ -1816,7 +1876,11 @@ export default function EggCounterPage() {
                         )}
                       </div>
                       <img
-                        src={(openaiResult as any)?.top_annotated_image || topPreviewUrl}
+                        src={
+                          (openaiResult as any)?.top_annotated_image ||
+                          ((openaiResult as any)?.auto_swapped ? sidePreviewUrl : topPreviewUrl) ||
+                          topPreviewUrl || ''
+                        }
                         alt="Top View"
                         style={{
                           width: '100%',
@@ -1828,7 +1892,7 @@ export default function EggCounterPage() {
                       />
                     </div>
                   )}
-                  {sidePreviewUrl && (
+                  {((openaiResult as any)?.side_annotated_image || sidePreviewUrl || topPreviewUrl) && (
                     <div>
                       <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <span>Side View {(openaiResult as any)?.side_annotated_image ? 'AI Detections (Layers)' : 'Image'}</span>
@@ -1837,7 +1901,11 @@ export default function EggCounterPage() {
                         )}
                       </div>
                       <img
-                        src={(openaiResult as any)?.side_annotated_image || sidePreviewUrl}
+                        src={
+                          (openaiResult as any)?.side_annotated_image ||
+                          ((openaiResult as any)?.auto_swapped ? topPreviewUrl : sidePreviewUrl) ||
+                          sidePreviewUrl || ''
+                        }
                         alt="Side View"
                         style={{
                           width: '100%',

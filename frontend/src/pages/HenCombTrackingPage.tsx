@@ -17,7 +17,7 @@ export default function HenCombTrackingPage() {
   const [totalCount, setTotalCount] = useState(0)
   const [visibleCount, setVisibleCount] = useState(0)
   const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment')
-  const [fitMode, setFitMode] = useState<'cover' | 'contain'>('cover')
+  const [fitMode, setFitMode] = useState<'cover' | 'contain'>('contain')
   const [isFullScreenVideo, setIsFullScreenVideo] = useState(false)
   const [isRecording, setIsRecording] = useState(false)
   const [recordingDuration, setRecordingDuration] = useState(0)
@@ -1036,20 +1036,10 @@ export default function HenCombTrackingPage() {
       const maxWRatio = isPortrait ? 0.35 : 0.32
       const maxHRatio = isPortrait ? 0.38 : 0.35
       const maxAreaRatio = 0.085
-      if (wRatio > maxWRatio || hRatio > maxHRatio || (wRatio * hRatio) > maxAreaRatio) continue
       const aspect = width / Math.max(height, 1)
-      if (aspect < 0.20 || aspect > 2.80) continue
-      // Skip if off-screen in cover mode
+      if (aspect < 0.10 || aspect > 4.50) continue
+      // Skip if completely off-screen
       if (x + width < 0 || x > cw || y + height < 0 || y > ch) continue
-
-      // Tighten box to compact square-ish comb dimensions (kutti box on head only)
-      if (width > height * 1.25) {
-        const midX = x + width / 2
-        width = height * 1.15
-        x = midX - width / 2
-      } else if (height > width * 1.35) {
-        height = width * 1.25
-      }
 
       liveCount++
       seqIndex++

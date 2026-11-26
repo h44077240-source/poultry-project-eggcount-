@@ -264,20 +264,20 @@ def _sync_generate_frames(video_source, ref_settings=None):
         u = a1 + a2 - inter
         return inter / u if u > 0 else 0.0
 
-    # ─── COMB DETECTION ZONE: Dynamic bounds covering the entire inspection area
-    ZONE_X1_PCT = 0.005
-    ZONE_Y1_PCT = 0.01
-    ZONE_X2_PCT = 0.995
-    ZONE_Y2_PCT = 0.99
+    # ─── COMB DETECTION ZONE: Dynamic bounds covering 100% of the entire inspection area
+    ZONE_X1_PCT = 0.00
+    ZONE_Y1_PCT = 0.00
+    ZONE_X2_PCT = 1.00
+    ZONE_Y2_PCT = 1.00
 
     if ref_settings:
-        if ref_settings.get('roi_y1_pct'):
+        if ref_settings.get('roi_y1_pct') and ref_settings.get('reference_video'):
             ZONE_Y1_PCT = float(ref_settings['roi_y1_pct'])
-        if ref_settings.get('roi_y2_pct'):
+        if ref_settings.get('roi_y2_pct') and ref_settings.get('reference_video'):
             ZONE_Y2_PCT = float(ref_settings['roi_y2_pct'])
-        if ref_settings.get('roi_x1_pct'):
+        if ref_settings.get('roi_x1_pct') and ref_settings.get('reference_video'):
             ZONE_X1_PCT = float(ref_settings['roi_x1_pct'])
-        if ref_settings.get('roi_x2_pct'):
+        if ref_settings.get('roi_x2_pct') and ref_settings.get('reference_video'):
             ZONE_X2_PCT = float(ref_settings['roi_x2_pct'])
 
     ZONE_X1 = int(OUT_W * ZONE_X1_PCT)
@@ -289,14 +289,14 @@ def _sync_generate_frames(video_source, ref_settings=None):
         """Check if a comb center point is strictly inside the detection zone."""
         return ZONE_X1 <= cx <= ZONE_X2 and ZONE_Y1 <= cy <= ZONE_Y2
 
-    MAX_COMB_W = 140   # Maximum width for hen HEAD/COMB only (scaled for display)
-    MAX_COMB_H = 140   # Maximum height for hen HEAD/COMB only (scaled for display)
-    MIN_COMB_SZ = 6    # Minimum comb size (captures all hen combs clearly)
+    MAX_COMB_W = 150   # Maximum width for hen HEAD/COMB only (scaled for display)
+    MAX_COMB_H = 150   # Maximum height for hen HEAD/COMB only (scaled for display)
+    MIN_COMB_SZ = 4    # Minimum comb size (captures all hen combs clearly)
     MATCH_RADIUS = 28.0  # Stable radius for tracking (prevents jumping to neighboring hen)
-    NEW_HEN_MIN_DIST = 10.0  # Rejects duplicate boxes on the same hen comb while preserving adjacent hens
-    MAX_LOST_MEMORY = 30  # Frame memory for lost hens before retirement
+    NEW_HEN_MIN_DIST = 8.0  # Rejects duplicate boxes on the same hen comb while preserving adjacent hens
+    MAX_LOST_MEMORY = 35  # Frame memory for lost hens before retirement
 
-    def extract_combs(f_img, conf_thresh=0.08, imgsz=None):
+    def extract_combs(f_img, conf_thresh=0.04, imgsz=None):
         if imgsz is None:
             imgsz = 640
         if active_model is None:
@@ -339,13 +339,13 @@ def _sync_generate_frames(video_source, ref_settings=None):
 
                 if not raw_boxes:
                     return []
-                # NMS threshold 0.35 so distinct neighboring combs are both preserved
-                indices = cv2.dnn.NMSBoxes(raw_boxes, raw_confs, score_threshold=conf_thresh, nms_threshold=0.35)
+                # NMS threshold 0.40 so distinct neighboring combs are both preserved
+                indices = cv2.dnn.NMSBoxes(raw_boxes, raw_confs, score_threshold=conf_thresh, nms_threshold=0.40)
                 idx_list = indices.flatten() if hasattr(indices, 'flatten') else indices
                 bx_list = [raw_boxes[i] for i in idx_list]
                 cf_list = [raw_confs[i] for i in idx_list]
             else:
-                res = active_model.predict(enhanced_bgr, imgsz=imgsz, conf=conf_thresh, iou=0.35, verbose=False)[0]
+                res = active_model.predict(enhanced_bgr, imgsz=imgsz, conf=conf_thresh, iou=0.40, verbose=False)[0]
                 if res.boxes is None or len(res.boxes) == 0:
                     return []
                 bx = res.boxes.xyxy.cpu().numpy()
@@ -359,20 +359,20 @@ def _sync_generate_frames(video_source, ref_settings=None):
 
             # Multi-spectrum comb mask: captures rich red, pale pink, orange-red, and low-light combs
             comb_mask = (
-                (((h_ch >= 130) | (h_ch <= 38)) & (s_ch > 4) & (v_ch > 12) & ((r_ch - g_ch) > -3)) |
-                (((r_ch - np.maximum(g_ch, b_ch)) > 0) & (s_ch > 4) & (v_ch > 12)) |
-                ((r_ch > 45) & (r_ch > g_ch) & (r_ch > b_ch))
+                (((h_ch >= 130) | (h_ch <= 38)) & (s_ch > 3) & (v_ch > 10) & ((r_ch - g_ch) > -4)) |
+                (((r_ch - np.maximum(g_ch, b_ch)) > -2) & (s_ch > 3) & (v_ch > 10)) |
+                ((r_ch > 40) & (r_ch > g_ch - 5) & (r_ch > b_ch - 5))
             )
 
             candidates = []
             for b, conf in zip(bx_list, cf_list):
                 bx1, by1, bw, bh = float(b[0]), float(b[1]), float(b[2]), float(b[3])
-                if bw < 6 or bh < 6 or bw > in_w * 0.45 or bh > in_h * 0.45:
+                if bw < 4 or bh < 4 or bw > in_w * 0.50 or bh > in_h * 0.50:
                     continue
 
                 aspect = bw / float(bh)
-                # Allow broader aspect ratios for combs viewed from different angles (0.20 to 3.8)
-                if aspect < 0.20 or aspect > 3.8:
+                # Allow wide aspect ratios for combs viewed from all angles (0.08 to 5.0)
+                if aspect < 0.08 or aspect > 5.0:
                     continue
 
                 orig_x1 = max(0, min(in_w - 1, int(bx1)))
@@ -383,7 +383,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
                 crop = comb_mask[orig_y1:orig_y2, orig_x1:orig_x2]
                 comb_px = np.count_nonzero(crop)
 
-                # Only reject if virtually zero red/comb features on very low confidence proposal
+                # Only reject proposals below 0.08 if zero comb color pixels present
                 if comb_px < 1 and conf < 0.08:
                     continue
 
@@ -392,12 +392,12 @@ def _sync_generate_frames(video_source, ref_settings=None):
                 bw_det = bw * scale_x_det
                 bh_det = bh * scale_y_det
                 
-                # Snug, accurate bounding box directly wrapping the hen's comb shape
-                w_final = max(14.0, min(bw_det * 1.05, 85.0))
-                h_final = max(14.0, min(bh_det * 1.05, 90.0))
+                # Generous, snug bounding box: 1.18x padding so comb is never cut off
+                w_final = max(18.0, min(bw_det * 1.18, 95.0))
+                h_final = max(18.0, min(bh_det * 1.18, 100.0))
                 hw, hh = w_final / 2.0, h_final / 2.0
 
-                if cy <= 4 or cy >= OUT_H - 4 or cx <= 4 or cx >= OUT_W - 4:
+                if cy <= 2 or cy >= OUT_H - 2 or cx <= 2 or cx >= OUT_W - 2:
                     continue
 
                 candidates.append({
@@ -419,7 +419,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
                     b2 = ex["box"]
                     dist = math.hypot(c1[0] - c2[0], c1[1] - c2[1])
                     iou = compute_iou(b1, b2)
-                    if dist < 10.0 or iou > 0.55:
+                    if dist < 8.0 or iou > 0.60:
                         duplicate = True
                         break
                 if not duplicate:
@@ -447,7 +447,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
         pass
 
     try:
-        init_dets = extract_combs(sample_frame, conf_thresh=0.14, imgsz=352 if is_cloud else 640)
+        init_dets = extract_combs(sample_frame, conf_thresh=0.04, imgsz=640)
         init_in_zone = [d for d in init_dets if is_in_zone(d["center"][0], d["center"][1])]
         if OUT_W < OUT_H:
             init_in_zone.sort(key=lambda d: -d["center"][1])

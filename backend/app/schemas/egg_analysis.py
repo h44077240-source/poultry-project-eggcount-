@@ -39,6 +39,7 @@ class EggAnalysisResponse(BaseModel):
     num_stacks: Optional[int] = Field(default=None, description="Number of stacks detected in top view")
     stack_height: Optional[int] = Field(default=None, description="Max stack height detected in side view")
     col_heights: Optional[list] = Field(default=None, description="List of detected column layer heights")
+    auto_swapped: Optional[bool] = Field(default=False, description="Whether view orientation was automatically swapped")
 
 
 class ChatAnalyzeResponse(BaseModel):
