@@ -141,40 +141,45 @@ def perform_moire_analysis(image_bytes: bytes) -> Dict[str, Any]:
         detected_device = "none"
         reasons = []
 
-        # Organic Real Scene Safety Gate:
-        # Genuine physical scenes (poultry, feathers, eggs, soil, room, hand) have organic textures:
-        # low flat-block ratio (< 0.08), low H/V edge alignment (< 0.32), and normal high-frequency peaks (< 300).
-        is_organic_real_scene = (flat_ratio < 0.08) and (hv_ratio < 0.32) and (peaks_high < 300)
+        # Check A: Physical Screen Bezel / Frame Detection (Laptop, Phone, Tablet, TV border)
+        if has_screen_frame:
+            if frame_aspect > 1.80:
+                dev = "mobile phone screen"
+            elif 1.25 <= frame_aspect <= 1.80:
+                dev = "laptop / TV / monitor screen"
+            else:
+                dev = "tablet / display screen"
+            
+            if peaks_high > 120 or long_line_count > 20 or flat_ratio > 0.04:
+                is_screen = True
+                detected_device = dev
+                reasons.append(f"Physical {dev} bezel detected ({frame_aspect}:1 ratio) with screen raster edges ({long_line_count} lines, {peaks_high} moiré peaks)")
 
-        if not is_organic_real_scene:
-            # Check A: Digital UI / Screenshot / Browser / App display
-            if flat_ratio > 0.10 and hv_ratio > 0.30:
+        # Check B: High-frequency LCD/OLED display pixel grid (Moiré interference)
+        if not is_screen:
+            if peaks_high > 240 and (flat_ratio > 0.03 or hv_ratio > 0.24 or long_line_count > 25):
+                is_screen = True
+                detected_device = "electronic display screen (LCD/OLED)"
+                reasons.append(f"High-frequency display pixel grid (Moiré) detected ({peaks_high} harmonic peaks)")
+            elif peaks_high > 340:
+                is_screen = True
+                detected_device = "electronic display screen"
+                reasons.append(f"Intense periodic pixel grid interference ({peaks_high} harmonic peaks)")
+
+        # Check C: Digital UI / Window / Direct Screenshot Detection
+        if not is_screen:
+            if flat_ratio > 0.10 and hv_ratio > 0.28:
                 is_screen = True
                 detected_device = "laptop / computer screen"
-                reasons.append(f"Digital UI detected (flat blocks: {flat_ratio*100:.1f}%, H/V edges: {hv_ratio*100:.1f}%)")
+                reasons.append(f"Digital computer UI detected (flat blocks: {flat_ratio*100:.1f}%, H/V edges: {hv_ratio*100:.1f}%)")
             elif flat_ratio > 0.14:
                 is_screen = True
                 detected_device = "digital display"
                 reasons.append(f"Electronic display detected (flat block ratio: {flat_ratio*100:.1f}%)")
-            elif hv_ratio > 0.34 and long_line_count > 30:
+            elif hv_ratio > 0.35 and long_line_count > 28:
                 is_screen = True
                 detected_device = "laptop or monitor screen"
                 reasons.append(f"Display window geometry detected (H/V alignment: {hv_ratio*100:.1f}%, {long_line_count} raster lines)")
-
-            # Check B: Physical photo taken OF a screen (Laptop, Mobile phone, Tablet, TV)
-            if not is_screen:
-                if has_screen_frame and peaks_high > 250:
-                    is_screen = True
-                    detected_device = "laptop / TV / mobile screen"
-                    reasons.append(f"Physical display bezel detected ({frame_aspect}:1 ratio) with screen pixel Moiré pattern ({peaks_high} peaks)")
-                elif peaks_high > 350 and (flat_ratio > 0.06 or hv_ratio > 0.26):
-                    is_screen = True
-                    detected_device = "electronic display screen"
-                    reasons.append(f"High-frequency LCD/OLED display pixel grid (Moiré) detected ({peaks_high} harmonic peaks)")
-                elif has_screen_frame and long_line_count > 45:
-                    is_screen = True
-                    detected_device = "monitor / tablet screen"
-                    reasons.append(f"Display screen border detected with {long_line_count} straight raster edges")
 
         if is_screen:
             status = "SUSPICIOUS"
@@ -182,7 +187,7 @@ def perform_moire_analysis(image_bytes: bytes) -> Dict[str, Any]:
             reason = f"{' '.join(reasons)}. Replay spoofing flag raised."
         else:
             status = "VERIFIED"
-            confidence = 0.95
+            confidence = 0.98
             reason = "Original Live Photo Verified. Real-world physical scene confirmed with natural photon noise and organic textures."
 
         return {

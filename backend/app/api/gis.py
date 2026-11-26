@@ -86,7 +86,7 @@ import json
 @router.get("/reverse-geocode")
 async def reverse_geocode(lat: float = Query(...), lng: float = Query(...)):
     """
-    Reverse-geocodes lat/lng into human-readable place, street, town, district, state, and pincode.
+    Reverse-geocodes lat/lng into human-readable exact village/suburb, district, state, and pincode.
     Uses OpenStreetMap Nominatim with proper User-Agent header, with BigDataCloud and coordinate fallback.
     """
     # 1. Try Nominatim with compliant User-Agent
@@ -101,34 +101,60 @@ async def reverse_geocode(lat: float = Query(...), lng: float = Query(...)):
                 data = json.loads(response.read().decode("utf-8"))
                 addr = data.get("address", {})
                 if addr:
+                    village = (
+                        addr.get("village") or 
+                        addr.get("suburb") or 
+                        addr.get("hamlet") or 
+                        addr.get("neighbourhood") or 
+                        addr.get("residential") or 
+                        addr.get("town") or 
+                        ""
+                    )
+                    town_city = addr.get("town") or addr.get("city") or addr.get("municipality") or ""
+                    district = (
+                        addr.get("county") or 
+                        addr.get("state_district") or 
+                        addr.get("district") or 
+                        town_city or 
+                        ""
+                    )
+                    state = addr.get("state") or ""
+                    postcode = addr.get("postcode") or ""
+                    country = addr.get("country") or "India"
+
                     parts = []
                     landmark = addr.get("amenity") or addr.get("building") or addr.get("shop")
                     if landmark:
                         parts.append(landmark)
-                    road = addr.get("road") or addr.get("pedestrian") or addr.get("neighbourhood")
+                    road = addr.get("road") or addr.get("pedestrian")
                     if road:
                         parts.append(road)
-                    town = addr.get("village") or addr.get("town") or addr.get("suburb") or addr.get("city")
-                    if town:
-                        parts.append(town)
-                    district = addr.get("county") or addr.get("state_district")
-                    if district and district != town:
-                        parts.append(district)
-                    state = addr.get("state")
-                    postcode = addr.get("postcode")
+                    if village:
+                        parts.append(village)
+                    if town_city and town_city != village:
+                        parts.append(town_city)
+                    if district and district != town_city and district != village:
+                        parts.append(district if "district" in district.lower() else f"{district} District")
                     if state and postcode:
                         parts.append(f"{state} - {postcode}")
                     elif state:
                         parts.append(state)
                     elif postcode:
                         parts.append(postcode)
-                    if addr.get("country"):
-                        parts.append(addr.get("country"))
+                    if country:
+                        parts.append(country)
                     
-                    if parts:
-                        return {"address": ", ".join(parts), "lat": lat, "lng": lng}
-                if data.get("display_name"):
-                    return {"address": data.get("display_name"), "lat": lat, "lng": lng}
+                    full_address = ", ".join([p for p in parts if p]) or data.get("display_name", "")
+                    return {
+                        "address": full_address,
+                        "village": village or town_city or "Local Area",
+                        "district": district or town_city or "District",
+                        "state": state or "State",
+                        "postcode": postcode,
+                        "country": country,
+                        "lat": lat,
+                        "lng": lng
+                    }
     except Exception:
         pass
 
@@ -139,18 +165,50 @@ async def reverse_geocode(lat: float = Query(...), lng: float = Query(...)):
         with urllib.request.urlopen(req, timeout=3) as response:
             if response.status == 200:
                 data = json.loads(response.read().decode("utf-8"))
-                locality = data.get("locality") or data.get("neighbourhood")
-                city = data.get("city") or data.get("principalSubdivision")
-                postcode = data.get("postcode")
-                country = data.get("countryName")
-                parts = [p for p in [locality, city, postcode, country] if p]
-                if parts:
-                    return {"address": ", ".join(parts), "lat": lat, "lng": lng}
+                locality = data.get("locality") or data.get("neighbourhood") or ""
+                city = data.get("city") or ""
+                state = data.get("principalSubdivision") or ""
+                postcode = data.get("postcode") or ""
+                country = data.get("countryName") or "India"
+
+                # Extract district from administrative levels
+                district = ""
+                admin_levels = data.get("localityInfo", {}).get("administrative", [])
+                for adm in admin_levels:
+                    name = adm.get("name", "")
+                    if "district" in name.lower() or adm.get("adminLevel") == 3:
+                        district = name
+                        break
+                if not district:
+                    district = city or locality
+
+                parts = [p for p in [locality, city, district if district not in [locality, city] else "", state, postcode, country] if p]
+                full_address = ", ".join(parts)
+                return {
+                    "address": full_address,
+                    "village": locality or city or "Local Area",
+                    "district": district or "District",
+                    "state": state or "State",
+                    "postcode": postcode,
+                    "country": country,
+                    "lat": lat,
+                    "lng": lng
+                }
     except Exception:
         pass
 
     # 3. Coordinate string fallback
     lat_card = "N" if lat >= 0 else "S"
     lng_card = "E" if lng >= 0 else "W"
-    return {"address": f"{abs(lat):.6f}° {lat_card}, {abs(lng):.6f}° {lng_card}", "lat": lat, "lng": lng}
+    coord_str = f"{abs(lat):.6f}° {lat_card}, {abs(lng):.6f}° {lng_card}"
+    return {
+        "address": coord_str,
+        "village": "Rural / Field Area",
+        "district": "Field District",
+        "state": "State",
+        "postcode": "",
+        "country": "India",
+        "lat": lat,
+        "lng": lng
+    }
 

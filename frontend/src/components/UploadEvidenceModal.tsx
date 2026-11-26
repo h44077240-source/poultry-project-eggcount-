@@ -12,11 +12,25 @@ interface UploadEvidenceModalProps {
   onSuccess: () => void;
 }
 
+export interface AddressDetails {
+  address: string;
+  village: string;
+  district: string;
+  state: string;
+  postcode?: string;
+  country?: string;
+}
+
 interface GeoLocationState {
   lat: number;
   lng: number;
   acc: number;
   address: string;
+  village?: string;
+  district?: string;
+  state?: string;
+  postcode?: string;
+  country?: string;
   date?: Date;
 }
 
@@ -59,16 +73,25 @@ export default function UploadEvidenceModal({ onClose, onSuccess }: UploadEviden
 
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
-  // Helper: Multi-source high-accuracy reverse geocode to street / place address
-  const fetchAddress = async (lat: number, lng: number): Promise<string> => {
-    // 1. Primary: backend high-accuracy reverse geocode endpoint (handles Nominatim + custom headers + zero CORS)
+  // Helper: Multi-source high-accuracy reverse geocode to village, district, state & street address
+  const fetchAddressDetails = async (lat: number, lng: number): Promise<AddressDetails> => {
+    // 1. Primary: backend high-accuracy reverse geocode endpoint (handles Nominatim + structured village, district, state)
     try {
       const res = await fetch(`/api/gis/reverse-geocode?lat=${lat}&lng=${lng}`, {
         signal: AbortSignal.timeout(4500)
       });
       if (res.ok) {
         const data = await res.json();
-        if (data && data.address) return data.address;
+        if (data && data.address) {
+          return {
+            address: data.address,
+            village: data.village || '',
+            district: data.district || '',
+            state: data.state || '',
+            postcode: data.postcode || '',
+            country: data.country || 'India'
+          };
+        }
       }
     } catch (e) {
       console.warn('Backend reverse geocode note:', e);
@@ -82,13 +105,34 @@ export default function UploadEvidenceModal({ onClose, onSuccess }: UploadEviden
       );
       if (bdcRes.ok) {
         const bdc = await bdcRes.json();
+        const village = bdc.locality || bdc.neighbourhood || '';
+        const state = bdc.principalSubdivision || '';
+        let district = '';
+        const admin = bdc.localityInfo?.administrative || [];
+        for (const a of admin) {
+          if (a.name && (a.name.toLowerCase().includes('district') || a.adminLevel === 3)) {
+            district = a.name;
+            break;
+          }
+        }
+        if (!district) district = bdc.city || village;
+
         const parts = [
-          bdc.locality || bdc.neighbourhood,
-          bdc.city || bdc.principalSubdivision,
+          village,
+          bdc.city && bdc.city !== village ? bdc.city : '',
+          district && district !== village ? district : '',
+          state,
           bdc.postcode,
           bdc.countryName
         ].filter(Boolean);
-        if (parts.length > 0) return parts.join(', ');
+        return {
+          address: parts.join(', '),
+          village: village || bdc.city || 'Local Area',
+          district: district || 'District',
+          state: state || 'State',
+          postcode: bdc.postcode || '',
+          country: bdc.countryName || 'India'
+        };
       }
     } catch (e) {
       console.warn('BDC reverse geocode fallback note:', e);
@@ -96,7 +140,14 @@ export default function UploadEvidenceModal({ onClose, onSuccess }: UploadEviden
 
     const latCard = lat >= 0 ? 'N' : 'S';
     const lngCard = lng >= 0 ? 'E' : 'W';
-    return `${Math.abs(lat).toFixed(6)}° ${latCard}, ${Math.abs(lng).toFixed(6)}° ${lngCard}`;
+    const coord = `${Math.abs(lat).toFixed(6)}° ${latCard}, ${Math.abs(lng).toFixed(6)}° ${lngCard}`;
+    return {
+      address: coord,
+      village: 'Field Location',
+      district: 'District',
+      state: 'State',
+      country: 'India'
+    };
   };
 
   // Continuous active GPS satellite tracking with instant cached location support
@@ -107,9 +158,20 @@ export default function UploadEvidenceModal({ onClose, onSuccess }: UploadEviden
           const lat = Number(pos.coords.latitude.toFixed(6));
           const lng = Number(pos.coords.longitude.toFixed(6));
           const acc = Math.round(pos.coords.accuracy || 3);
-          const addr = await fetchAddress(lat, lng);
-          setLocation({ lat, lng, acc, address: addr, date: new Date() });
-          toast.success(`📍 GPS Locked: ${addr.substring(0, 30)}...`, { id: 'gps-lock' });
+          const locDetails = await fetchAddressDetails(lat, lng);
+          setLocation({
+            lat,
+            lng,
+            acc,
+            address: locDetails.address,
+            village: locDetails.village,
+            district: locDetails.district,
+            state: locDetails.state,
+            postcode: locDetails.postcode,
+            country: locDetails.country,
+            date: new Date()
+          });
+          toast.success(`📍 GPS Locked: ${locDetails.village || locDetails.address.substring(0, 30)}`, { id: 'gps-lock' });
         },
         (err) => {
           console.warn('GPS query notice:', err.message);
@@ -131,8 +193,19 @@ export default function UploadEvidenceModal({ onClose, onSuccess }: UploadEviden
             const lat = Number(pos.coords.latitude.toFixed(6));
             const lng = Number(pos.coords.longitude.toFixed(6));
             const acc = Math.round(pos.coords.accuracy || 3);
-            const addr = await fetchAddress(lat, lng);
-            setLocation({ lat, lng, acc, address: addr, date: new Date() });
+            const locDetails = await fetchAddressDetails(lat, lng);
+            setLocation({
+              lat,
+              lng,
+              acc,
+              address: locDetails.address,
+              village: locDetails.village,
+              district: locDetails.district,
+              state: locDetails.state,
+              postcode: locDetails.postcode,
+              country: locDetails.country,
+              date: new Date()
+            });
           },
           (err) => {
             console.warn('GPS initial query notice:', err.message);
@@ -150,8 +223,19 @@ export default function UploadEvidenceModal({ onClose, onSuccess }: UploadEviden
               if (prev && Math.abs(prev.lat - lat) < 0.0001 && Math.abs(prev.lng - lng) < 0.0001) {
                 return { ...prev, lat, lng, acc, date: new Date() };
               }
-              fetchAddress(lat, lng).then(addr => {
-                setLocation({ lat, lng, acc, address: addr, date: new Date() });
+              fetchAddressDetails(lat, lng).then(locDetails => {
+                setLocation({
+                  lat,
+                  lng,
+                  acc,
+                  address: locDetails.address,
+                  village: locDetails.village,
+                  district: locDetails.district,
+                  state: locDetails.state,
+                  postcode: locDetails.postcode,
+                  country: locDetails.country,
+                  date: new Date()
+                });
               });
               return prev || { lat, lng, acc, address: 'Pinpointing address...', date: new Date() };
             });
@@ -171,15 +255,16 @@ export default function UploadEvidenceModal({ onClose, onSuccess }: UploadEviden
     };
   }, []);
 
-  // Automatic GeoTag Stamper (GIS Map + Place Address + Lat/Lng + Time IST)
+  // Automatic GeoTag Stamper (GIS Map + Village, District, State + Lat/Lng + Time IST)
   const applyGeoTagStamp = async (
     originalFile: File, 
     lat: number, 
     lng: number, 
     acc: number = 3,
     captureDate: Date = new Date()
-  ): Promise<{ stampedFile: File; address: string }> => {
-    const address = await fetchAddress(lat, lng);
+  ): Promise<{ stampedFile: File; address: string; locInfo: AddressDetails }> => {
+    const locInfo = await fetchAddressDetails(lat, lng);
+    const address = locInfo.address;
     
     // OpenStreetMap GIS Map Tile Calculation
     const zoom = 15;
@@ -225,11 +310,11 @@ export default function UploadEvidenceModal({ onClose, onSuccess }: UploadEviden
         ctx.drawImage(img, 0, 0, drawWidth, drawHeight);
         
         // 2. High-Precision GeoTag Watermark Banner at Bottom
-        const barHeight = Math.max(140, Math.floor(drawHeight * 0.16));
+        const barHeight = Math.max(165, Math.floor(drawHeight * 0.185));
         const barY = drawHeight - barHeight;
 
         // Dark slate backdrop with high contrast
-        ctx.fillStyle = 'rgba(10, 15, 30, 0.92)';
+        ctx.fillStyle = 'rgba(10, 15, 30, 0.94)';
         ctx.fillRect(0, barY, drawWidth, barHeight);
 
         // Top accent line (blue to cyan to emerald gradient)
@@ -241,7 +326,7 @@ export default function UploadEvidenceModal({ onClose, onSuccess }: UploadEviden
         ctx.fillRect(0, barY, drawWidth, Math.max(3, Math.floor(drawHeight * 0.004)));
         
         // 3. GIS Map Tile Box on Left
-        const mapMargin = Math.floor(barHeight * 0.08);
+        const mapMargin = Math.floor(barHeight * 0.07);
         const mapSize = barHeight - (mapMargin * 2);
         const mapX = mapMargin;
         const mapY = barY + mapMargin;
@@ -282,9 +367,9 @@ export default function UploadEvidenceModal({ onClose, onSuccess }: UploadEviden
         }
 
         // 4. Information Block on Right
-        const textStartX = mapX + mapSize + Math.floor(barHeight * 0.10);
+        const textStartX = mapX + mapSize + Math.floor(barHeight * 0.09);
         const availableWidth = drawWidth - textStartX - mapMargin;
-        const baseFontSize = Math.max(14, Math.floor(drawHeight * 0.021));
+        const baseFontSize = Math.max(13, Math.floor(drawHeight * 0.020));
         const fontSans = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
         
         ctx.textBaseline = 'top';
@@ -309,30 +394,38 @@ export default function UploadEvidenceModal({ onClose, onSuccess }: UploadEviden
           return lines;
         };
 
-        const addrLines = wrapAddress(address, availableWidth);
-        const lineHeight = Math.floor(baseFontSize * 1.35);
+        const lineHeight = Math.floor(baseFontSize * 1.30);
         let curY = barY + mapMargin + 2;
 
-        // Line 1 (& 2 if wrapped): Exact Place Address
+        // Line 1: Exact Village, District, State
+        const locationTitle = [locInfo.village, locInfo.district, locInfo.state].filter(Boolean).join(', ') || locInfo.address;
         ctx.fillStyle = '#FFFFFF';
-        ctx.font = `bold ${baseFontSize}px ${fontSans}`;
-        for (let i = 0; i < addrLines.length; i++) {
-          const prefix = i === 0 ? '📍 ' : '   ';
-          ctx.fillText(prefix + addrLines[i], textStartX, curY);
-          curY += lineHeight;
+        ctx.font = `bold ${Math.floor(baseFontSize * 1.05)}px ${fontSans}`;
+        ctx.fillText(`📍 ${locationTitle}`, textStartX, curY);
+        curY += lineHeight;
+
+        // Line 2: Full Detailed Street Address
+        ctx.fillStyle = '#E2E8F0';
+        ctx.font = `500 ${Math.floor(baseFontSize * 0.85)}px ${fontSans}`;
+        const addrLines = wrapAddress(locInfo.address, availableWidth);
+        if (addrLines.length > 0) {
+          ctx.fillText(`🏠 ${addrLines[0]}`, textStartX, curY);
+          curY += Math.floor(lineHeight * 0.95);
         }
 
-        // Next Line: GPS Coordinates
+        // Line 3: Exact GPS Latitude & Longitude with Cardinal Directions
+        const latCard = lat >= 0 ? 'N' : 'S';
+        const lngCard = lng >= 0 ? 'E' : 'W';
         ctx.fillStyle = '#38BDF8';
         ctx.font = `600 ${Math.floor(baseFontSize * 0.88)}px ${fontSans}`;
         ctx.fillText(
-          `🛰️ GPS: Lat ${lat.toFixed(6)}° N   Long ${lng.toFixed(6)}° E  (±${acc}m)`,
+          `🛰️ GPS: Latitude: ${Math.abs(lat).toFixed(6)}° ${latCard}   Longitude: ${Math.abs(lng).toFixed(6)}° ${lngCard}  (Acc: ±${acc}m)`,
           textStartX,
           curY
         );
         curY += lineHeight;
 
-        // Next Line: Date & Time in IST
+        // Line 4: Date & Time in IST
         const dateStr = captureDate.toLocaleDateString('en-IN', {
           day: '2-digit', month: 'short', year: 'numeric',
           timeZone: 'Asia/Kolkata'
@@ -343,13 +436,13 @@ export default function UploadEvidenceModal({ onClose, onSuccess }: UploadEviden
 
         ctx.fillStyle = '#FCD34D';
         ctx.font = `600 ${Math.floor(baseFontSize * 0.84)}px ${fontSans}`;
-        ctx.fillText(`🕒 Time: ${dateStr}`, textStartX, curY);
+        ctx.fillText(`🕒 Date & Time: ${dateStr}`, textStartX, curY);
         curY += lineHeight;
 
-        // Next Line: GioTag Real-Time Physical Verification Seal
+        // Line 5: GioTag Real-Time Physical Verification Seal
         ctx.fillStyle = '#34D399';
         ctx.font = `600 ${Math.floor(baseFontSize * 0.78)}px ${fontSans}`;
-        ctx.fillText(`🔒 GioTag Real-Time Physical Verification • Authenticated`, textStartX, curY);
+        ctx.fillText(`🔒 GioTag Real-Time Geo-Verified Evidence • Live Authenticated`, textStartX, curY);
 
         canvas.toBlob((blob) => {
           URL.revokeObjectURL(objectUrl);
@@ -365,7 +458,7 @@ export default function UploadEvidenceModal({ onClose, onSuccess }: UploadEviden
       img.src = objectUrl;
     });
 
-    return { stampedFile, address };
+    return { stampedFile, address, locInfo };
   };
 
   // Handle Photo Capture: Automatic GPS lock + Automatic Stamping + Automatic Preview
@@ -431,8 +524,8 @@ export default function UploadEvidenceModal({ onClose, onSuccess }: UploadEviden
         return;
       }
 
-      // Automatically Stamp Photo with GIS Map, Address, Lat/Lng, and Timing!
-      const { stampedFile, address } = await applyGeoTagStamp(selectedFile, finalLat, finalLng, finalAcc, finalDate);
+      // Automatically Stamp Photo with GIS Map, Address, Village, District, State, Lat/Lng, and Timing!
+      const { stampedFile, address, locInfo } = await applyGeoTagStamp(selectedFile, finalLat, finalLng, finalAcc, finalDate);
       
       setFile(stampedFile);
       setPreviewUrl(URL.createObjectURL(stampedFile));
@@ -441,10 +534,16 @@ export default function UploadEvidenceModal({ onClose, onSuccess }: UploadEviden
         lng: finalLng,
         acc: finalAcc,
         address,
+        village: locInfo.village,
+        district: locInfo.district,
+        state: locInfo.state,
+        postcode: locInfo.postcode,
+        country: locInfo.country,
         date: finalDate
       });
 
-      toast.success(`🎯 GeoTag Stamped: ${address.substring(0, 40)}...`);
+      const displayLocation = [locInfo.village, locInfo.district, locInfo.state].filter(Boolean).join(', ') || address;
+      toast.success(`🎯 GeoTag Stamped: ${displayLocation.substring(0, 40)}`);
     } catch (error: any) {
       console.error('GeoTag error:', error);
       toast.error('Failed to apply GeoTag: ' + (error?.message || error));
@@ -626,6 +725,9 @@ export default function UploadEvidenceModal({ onClose, onSuccess }: UploadEviden
                 <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#38BDF8' }}>
                   {location?.lat.toFixed(6)}° N, {location?.lng.toFixed(6)}° E (±{location?.acc}m)
                 </span>
+                <div style={{ fontSize: '0.78rem', color: '#10b981', marginTop: 2, fontWeight: 700 }}>
+                  🏡 Village: {location?.village || 'Local Area'} | Dist: {location?.district || ''} | State: {location?.state || ''}
+                </div>
                 <div style={{ fontSize: '0.75rem', color: 'var(--text-primary)', marginTop: 2, fontWeight: 500 }}>
                   📍 {location?.address}
                 </div>
@@ -797,9 +899,12 @@ export default function UploadEvidenceModal({ onClose, onSuccess }: UploadEviden
                 {location ? (
                   <div style={{ marginTop: 6 }}>
                     <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#38BDF8' }}>
-                      {location.lat.toFixed(6)}° N, {location.lng.toFixed(6)}° E (±{location.acc}m)
+                      Latitude: {Math.abs(location.lat).toFixed(6)}° {location.lat >= 0 ? 'N' : 'S'} | Longitude: {Math.abs(location.lng).toFixed(6)}° {location.lng >= 0 ? 'E' : 'W'} (±{location.acc}m)
                     </div>
-                    <div style={{ fontSize: '0.78rem', color: 'var(--text-primary)', marginTop: 2, fontWeight: 500, lineHeight: 1.35 }}>
+                    <div style={{ fontSize: '0.78rem', color: '#10B981', marginTop: 2, fontWeight: 700 }}>
+                      🏡 Village: {location.village || 'Local Area'} | Dist: {location.district || ''} | State: {location.state || ''}
+                    </div>
+                    <div style={{ fontSize: '0.76rem', color: 'var(--text-primary)', marginTop: 2, fontWeight: 500, lineHeight: 1.35 }}>
                       📍 {location.address}
                     </div>
                   </div>

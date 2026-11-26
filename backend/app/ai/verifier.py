@@ -124,8 +124,10 @@ class OpenCVVerifier(BaseVerifier):
         llm_ran_ok = (llm_confidence > 0.0) and not llm_result.get("error", False)
         is_screen = moire_is_screen or (llm_ran_ok and llm_is_screen)
 
-        # Digital tampering requires substantial compression level anomalies (ELA)
-        is_tampered = (ela_score > 0.85) or (ela_score > 0.65 and noise_score > 0.96)
+        # Digital tampering requires substantial localized compression anomalies combined with noise discontinuity
+        is_tampered = (ela_score > 0.88 and noise_score > 0.82) or (
+            ela_result.get("suspicious_ratio", 0) > 0.38 and noise_score > 0.90 and ela_result.get("ela_std", 0) > 0.12
+        )
 
         if is_screen:
             status = "SUSPICIOUS"
