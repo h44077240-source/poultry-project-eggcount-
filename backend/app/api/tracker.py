@@ -307,8 +307,8 @@ def stream_video_file(filename: str):
     ]
 
     filepath = None
-    # Poll up to 3.0 seconds (in 100ms intervals) if file was just submitted and is writing to disk
-    for _ in range(30):
+    # Poll up to 15.0 seconds (in 100ms intervals) if file was just submitted and is writing to disk
+    for _ in range(150):
         for d in search_dirs:
             for fname in [clean_filename, sanitized_filename, base_file]:
                 p = d / fname
@@ -323,17 +323,11 @@ def stream_video_file(filename: str):
 
     if not filepath or not os.path.exists(filepath):
         if "demo" in clean_filename.lower():
-            for df in [PROJECT_ROOT / "demo_hen_video.mp4", PROJECT_ROOT / "backend" / "demo_hen_video.mp4"]:
-                if df.exists():
-                    filepath = str(df)
-                    break
-        if not filepath:
-            # Fallback to demo/sample videos so it never fails or throws a 404
             for df in [
-                PROJECT_ROOT / "backend" / "sample_videos" / "DJI_20260911155924_0026_S.MP4",
-                PROJECT_ROOT / "sample_videos" / "DJI_20260911155924_0026_S.MP4",
                 PROJECT_ROOT / "demo_hen_video.mp4",
-                PROJECT_ROOT / "backend" / "demo_hen_video.mp4"
+                PROJECT_ROOT / "backend" / "demo_hen_video.mp4",
+                PROJECT_ROOT / "backend" / "sample_videos" / "DJI_20260911155924_0026_S.MP4",
+                PROJECT_ROOT / "sample_videos" / "DJI_20260911155924_0026_S.MP4"
             ]:
                 if df.exists():
                     filepath = str(df)

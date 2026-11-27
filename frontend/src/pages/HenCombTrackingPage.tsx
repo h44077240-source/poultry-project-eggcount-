@@ -428,10 +428,10 @@ export default function HenCombTrackingPage() {
   const startCloudUpload = (file: File) => {
     setShowUploadChoiceModal(false)
     setErrorMsg(null)
-    setActiveLoadingCard(null)
-    setIsProcessing(false)
-    setUploadProgress(null)
-    setUploadStatusText(null)
+    setActiveLoadingCard('upload')
+    setIsProcessing(true)
+    setUploadProgress(0)
+    setUploadStatusText('Uploading video to AI server...')
     setCurrentSessionSource('UPLOADED_VIDEO')
     setCurrentVideoFilename(file.name)
 
@@ -444,31 +444,62 @@ export default function HenCombTrackingPage() {
     setVisibleCount(0)
 
     const cleanName = file.name.replace(/[^a-zA-Z0-9_.-]/g, '_') || 'video.mp4'
-    // Immediately set streamUrl without waiting for upload to finish
-    setStreamUrl(`${activeBackendUrl}/stream_video/${encodeURIComponent(cleanName)}?t=${Date.now()}`)
-    setStreamMode('video')
-    setIsStreamLoading(false)
 
-    // Upload in background silently
     const formData = new FormData()
     formData.append('file', file)
 
     const xhr = new XMLHttpRequest()
     xhrRef.current = xhr
 
+    xhr.upload.onprogress = (evt) => {
+      if (evt.lengthComputable) {
+        const pct = Math.round((evt.loaded / evt.total) * 100)
+        setUploadProgress(pct)
+        setUploadStatusText(`Uploading video... ${pct}%`)
+      }
+    }
+
     xhr.onload = () => {
       xhrRef.current = null
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
           const resp = JSON.parse(xhr.responseText)
-          if (resp && resp.success && resp.filename && resp.filename !== cleanName) {
-            setStreamUrl(`${activeBackendUrl}/stream_video/${encodeURIComponent(resp.filename)}?t=${Date.now()}`)
-          }
-        } catch (_) {}
+          const targetFilename = (resp && resp.filename) ? resp.filename : cleanName
+          setUploadProgress(100)
+          setUploadStatusText('Starting AI comb detection stream...')
+          setTimeout(() => {
+            setActiveLoadingCard(null)
+            setIsProcessing(false)
+            setUploadProgress(null)
+            setUploadStatusText(null)
+            setStreamUrl(`${activeBackendUrl}/stream_video/${encodeURIComponent(targetFilename)}?t=${Date.now()}`)
+            setStreamMode('video')
+            setIsStreamLoading(false)
+          }, 250)
+        } catch (_) {
+          setActiveLoadingCard(null)
+          setIsProcessing(false)
+          setUploadProgress(null)
+          setUploadStatusText(null)
+          setStreamUrl(`${activeBackendUrl}/stream_video/${encodeURIComponent(cleanName)}?t=${Date.now()}`)
+          setStreamMode('video')
+          setIsStreamLoading(false)
+        }
+      } else {
+        setErrorMsg('Video upload failed on server. Please try again.')
+        setActiveLoadingCard(null)
+        setIsProcessing(false)
+        setUploadProgress(null)
+        setUploadStatusText(null)
       }
     }
     xhr.onerror = () => {
       xhrRef.current = null
+      setErrorMsg('Network error while uploading video to server.')
+      setActiveLoadingCard(null)
+      setIsProcessing(false)
+      setUploadProgress(null)
+      setUploadStatusText(null)
     }
 
     xhr.open('POST', `${activeBackendUrl}/upload`, true)
