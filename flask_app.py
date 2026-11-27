@@ -387,7 +387,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
                 comb_px = np.count_nonzero(crop)
 
                 # Color verification: MUST contain genuine red comb pixels or high confidence AI detection. Rejects non-comb regions
-                if comb_px < 1 and conf < 0.14:
+                if comb_px < 2 and conf < 0.20:
                     continue
 
                 # Snug Comb Centroid Localization: Locates the red comb crest at the upper part of head
@@ -445,7 +445,25 @@ def _sync_generate_frames(video_source, ref_settings=None):
                         break
                 if not duplicate:
                     dedup.append(d)
-            return dedup
+
+            # Anti-Body Filter: Strictly suppress any proposal directly below an upper comb on the same hen.
+            # On an upright hen, the comb crest is at the top (lower Y).
+            # Any proposal directly below (|dx| <= 18px and 8px <= dy <= 60px) is on the chicken's body/chest feathers!
+            dedup.sort(key=lambda d: d["center"][1])
+            comb_only = []
+            for d in dedup:
+                cx, cy = d["center"]
+                is_body = False
+                for top in comb_only:
+                    tcx, tcy = top["center"]
+                    dx = abs(cx - tcx)
+                    dy = cy - tcy
+                    if dx <= 18.0 and 8.0 <= dy <= 60.0:
+                        is_body = True
+                        break
+                if not is_body:
+                    comb_only.append(d)
+            return comb_only
         except Exception:
             return []
 
@@ -751,10 +769,12 @@ def _sync_generate_frames(video_source, ref_settings=None):
                     if not (12 <= dcx <= OUT_W - 12 and 12 <= dcy <= OUT_H - 12):
                         continue
 
-                    # Strict anti-duplicate: Reject duplicate proposals on the SAME hen (within 16px or IOU > 0.28).
-                    # Preserves adjacent hens in neighboring cages (spaced 20-35px apart) without missing them!
+                    # Strict anti-duplicate & anti-body: Reject duplicate proposals on the SAME hen (within 16px or IOU > 0.28).
+                    # Reject body boxes: Never create a new hen on the body below an already tracked comb!
                     is_near = any(
-                        math.hypot(dcx - h["center"][0], dcy - h["center"][1]) < 16.0 or compute_iou(d["box"], h["box"]) > 0.28
+                        math.hypot(dcx - h["center"][0], dcy - h["center"][1]) < 16.0 or
+                        compute_iou(d["box"], h["box"]) > 0.28 or
+                        (abs(dcx - h["center"][0]) <= 18.0 and 8.0 <= (dcy - h["center"][1]) <= 60.0)
                         for h in hens.values() if h["lost"] <= 15
                     )
                     if is_near:
@@ -830,9 +850,9 @@ def _sync_generate_frames(video_source, ref_settings=None):
                 hid for hid, h in hens.items()
                 if h["lost"] <= 2 and (4 <= h["center"][0] <= OUT_W - 4 and 4 <= h["center"][1] <= OUT_H - 4)
             ]
-            # Spatial deduplication: Strictly PREVENT duplicate boxes on the SAME comb!
-            # Preserves adjacent neighbor combs spaced >= 13px apart so all visible hens get boxes!
-            candidate_hens.sort(key=lambda hid: (hens[hid]["lost"], -hens[hid].get("hits", 0)))
+            # Spatial deduplication & Anti-Body Rendering:
+            # Strictly PREVENT duplicate boxes on the SAME comb AND suppress any box on the chicken's body!
+            candidate_hens.sort(key=lambda hid: (hens[hid]["center"][1], hens[hid]["lost"], -hens[hid].get("hits", 0)))
             render_hens = []
             for hid in candidate_hens:
                 b1 = hens[hid]["box"]
@@ -843,7 +863,10 @@ def _sync_generate_frames(video_source, ref_settings=None):
                     c2 = hens[r_hid]["center"]
                     dist = math.hypot(c1[0] - c2[0], c1[1] - c2[1])
                     iou = compute_iou(b1, b2)
-                    if dist < 13.0 or iou > 0.38:
+                    dx = abs(c1[0] - c2[0])
+                    dy = c1[1] - c2[1]
+                    # If nearby (<13px) or overlapping (IOU>0.38) or on the body below an already rendered comb (dx<=18px, 8<=dy<=60px)
+                    if dist < 13.0 or iou > 0.38 or (dx <= 18.0 and 8.0 <= dy <= 60.0):
                         overlap = True
                         break
                 if not overlap:
