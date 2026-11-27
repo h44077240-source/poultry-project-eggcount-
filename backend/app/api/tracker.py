@@ -411,6 +411,18 @@ def stream_video_cam():
         headers=stream_headers
     )
 
+@router.get("/git_commit")
+def get_git_commit():
+    import subprocess
+    h = "unknown"
+    try:
+        h = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+    except Exception as e:
+        h = str(e)
+    f_path = Path(__file__).resolve().parent.parent.parent / "flask_app.py"
+    f_stat = {"exists": f_path.exists(), "size": f_path.stat().st_size if f_path.exists() else 0, "mtime": f_path.stat().st_mtime if f_path.exists() else 0}
+    return {"commit": h, "latest": "fafea50", "flask_app": f_stat, "server_time": time.time()}
+
 @router.get("/quick_status")
 async def quick_status():
     import sys, platform
