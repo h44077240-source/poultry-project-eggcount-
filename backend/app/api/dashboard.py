@@ -26,6 +26,23 @@ async def get_statistics(
 
     ev_q = db.query(Evidence).filter(Evidence.deleted_at == None)
 
+    # ─── Aggregate Today's Poultry Metrics ─────────────────────────────────────
+    today_eggs = 0
+    today_trays = 0
+    today_missing = 0
+    today_hens = 0
+    try:
+        from app.database.models import EggCountSession, HenCountSession
+        egg_sessions_today = db.query(EggCountSession).filter(func.date(EggCountSession.created_at) == today).all()
+        today_eggs = sum((s.egg_count or 0) for s in egg_sessions_today)
+        today_trays = sum((s.tray_count or 0) for s in egg_sessions_today)
+        today_missing = sum((s.missing_egg_count or 0) for s in egg_sessions_today)
+
+        hen_sessions_today = db.query(HenCountSession).filter(func.date(HenCountSession.created_at) == today).all()
+        today_hens = sum((s.total_count or 0) for s in hen_sessions_today)
+    except Exception as e:
+        print(f"[Dashboard Note] Poultry stats error: {e}")
+
     return DashboardStats(
         total_evidence=ev_q.count(),
         verified_evidence=ev_q.filter(Evidence.status == EvidenceStatusEnum.VERIFIED).count(),
@@ -39,6 +56,10 @@ async def get_statistics(
         ).count(),
         evidence_today=ev_q.filter(func.date(Evidence.created_at) == today).count(),
         evidence_this_week=ev_q.filter(Evidence.created_at >= week_ago).count(),
+        today_eggs=today_eggs,
+        today_trays=today_trays,
+        today_missing_eggs=today_missing,
+        today_hens=today_hens,
     )
 
 
@@ -114,3 +135,76 @@ async def get_daily_hen_summary(db: Session = Depends(get_db)):
         day_map[date_str]["sessions_count"] += 1
         day_map[date_str]["peak_visible"] = max(day_map[date_str]["peak_visible"], s.visible_count or 0)
     return list(day_map.values())
+
+
+@router.get("/daily-egg-summary")
+async def get_daily_egg_summary(db: Session = Depends(get_db)):
+    """Return daily total egg and tray counts grouped by date with deductions and timestamps."""
+    from app.database.models import EggCountSession
+    sessions = db.query(EggCountSession).order_by(EggCountSession.created_at.desc()).all()
+    day_map = {}
+    for s in sessions:
+        date_str = s.created_at.strftime("%Y-%m-%d")
+        formatted = s.created_at.strftime("%d %b %Y")
+        if date_str not in day_map:
+            day_map[date_str] = {
+                "date": date_str,
+                "formatted_date": formatted,
+                "total_eggs": 0,
+                "total_trays": 0,
+                "expected_eggs": 0,
+                "missing_eggs": 0,
+                "sessions_count": 0,
+                "recent_sessions": []
+            }
+        day_map[date_str]["total_eggs"] += (s.egg_count or 0)
+        day_map[date_str]["total_trays"] += (s.tray_count or 0)
+        day_map[date_str]["expected_eggs"] += (s.expected_egg_count or 0)
+        day_map[date_str]["missing_eggs"] += (s.missing_egg_count or 0)
+        day_map[date_str]["sessions_count"] += 1
+        if len(day_map[date_str]["recent_sessions"]) < 10:
+            day_map[date_str]["recent_sessions"].append({
+                "id": s.id,
+                "time": s.created_at.strftime("%I:%M:%S %p"),
+                "tray_count": s.tray_count,
+                "egg_count": s.egg_count,
+                "missing_egg_count": s.missing_egg_count,
+                "detection_mode": s.detection_mode,
+                "source_type": s.source_type,
+                "confidence": s.confidence,
+                "notes": s.notes,
+            })
+    return list(day_map.values())
+
+
+@router.get("/poultry-overview")
+async def get_poultry_overview(db: Session = Depends(get_db)):
+    """Consolidated poultry overview for Main Dashboard."""
+    from app.database.models import EggCountSession, HenCountSession
+    today = datetime.utcnow().date()
+    today_str = today.strftime("%Y-%m-%d")
+
+    egg_sessions = db.query(EggCountSession).order_by(EggCountSession.created_at.desc()).all()
+    hen_sessions = db.query(HenCountSession).order_by(HenCountSession.created_at.desc()).all()
+
+    today_egg_sessions = [s for s in egg_sessions if s.created_at.strftime("%Y-%m-%d") == today_str]
+    today_hen_sessions = [s for s in hen_sessions if s.created_at.strftime("%Y-%m-%d") == today_str]
+
+    return {
+        "today": {
+            "date": today.strftime("%d %b %Y"),
+            "eggs": sum((s.egg_count or 0) for s in today_egg_sessions),
+            "trays": sum((s.tray_count or 0) for s in today_egg_sessions),
+            "missing_eggs": sum((s.missing_egg_count or 0) for s in today_egg_sessions),
+            "egg_sessions": len(today_egg_sessions),
+            "hens": sum((s.total_count or 0) for s in today_hen_sessions),
+            "hen_sessions": len(today_hen_sessions),
+        },
+        "all_time": {
+            "eggs": sum((s.egg_count or 0) for s in egg_sessions),
+            "trays": sum((s.tray_count or 0) for s in egg_sessions),
+            "missing_eggs": sum((s.missing_egg_count or 0) for s in egg_sessions),
+            "hens": sum((s.total_count or 0) for s in hen_sessions),
+        }
+    }
+

@@ -75,6 +75,8 @@ export const dashboardApi = {
   statusDist: () => api.get('/api/dashboard/status-distribution'),
   deptStats: () => api.get('/api/dashboard/department-stats'),
   dailyHenSummary: () => api.get('/api/dashboard/daily-hen-summary'),
+  dailyEggSummary: () => api.get('/api/dashboard/daily-egg-summary'),
+  poultryOverview: () => api.get('/api/dashboard/poultry-overview'),
 }
 
 // ─── Evidence ─────────────────────────────────────────────────────────────────
@@ -128,6 +130,12 @@ export const aiApi = {
     api.post('/api/ai/thermal-analyze', formData, {
       timeout: 60000,  // just uploading the file — should be fast
     }),
+  /** Egg Count Session History & Daily Logs */
+  getEggSessions: (limit = 50) => api.get(`/api/ai/egg-sessions?limit=${limit}`),
+  createEggSession: (data: any) => api.post('/api/ai/egg-sessions', data),
+  deleteEggSession: (id: string) => api.delete(`/api/ai/egg-sessions/${id}`),
+  clearEggSessions: () => api.delete('/api/ai/egg-sessions'),
+  getEggDailySummary: () => api.get('/api/ai/egg-sessions/daily-summary'),
 }
 
 // ─── Blockchain ───────────────────────────────────────────────────────────────

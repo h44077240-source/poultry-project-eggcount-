@@ -250,6 +250,23 @@ async def count_trays(
             result["hen_count"] = 0
             
         result.pop("annotated_frame", None)
+
+        # Auto-save session if trays or eggs were detected
+        if result.get("tray_count", 0) > 0 or result.get("egg_count", 0) > 0 or target == "trays":
+            sess = record_egg_count_session(
+                tray_count=result.get("tray_count", 0),
+                egg_count=result.get("egg_count", 0),
+                expected_egg_count=result.get("expected_egg_count", 0),
+                missing_egg_count=result.get("missing_egg_count", 0),
+                source_type="YOLO_SCAN",
+                image_filename=getattr(actual_file, "filename", "scan.jpg") or "scan.jpg",
+                detection_mode="yolo",
+                confidence=confidence_threshold
+            )
+            if sess:
+                result["session_id"] = sess.id
+                result["created_at"] = sess.created_at.isoformat()
+
         return result
     except Exception as e:
         import traceback
@@ -484,7 +501,22 @@ async def analyze_egg_image(
             detail="Unable to analyze this image. Please upload a clearer photo and try again.",
         )
 
-    # ── 6. Validate and return ───────────────────────────────────────────────
+    # ── 6. Auto-save session & return ────────────────────────────────────────
+    if analysis.get("tray_count", 0) > 0 or analysis.get("egg_count", 0) > 0 or target == "trays":
+        sess = record_egg_count_session(
+            tray_count=analysis.get("tray_count", 0),
+            egg_count=analysis.get("egg_count", 0),
+            expected_egg_count=analysis.get("expected_egg_count", 0),
+            missing_egg_count=analysis.get("missing_egg_count", 0),
+            source_type="IMAGE_UPLOAD",
+            image_filename=getattr(image, "filename", "photo.jpg") or "photo.jpg",
+            detection_mode="openai",
+            confidence=1.0 if analysis.get("confidence") == "high" else 0.8
+        )
+        if sess:
+            analysis["session_id"] = sess.id
+            analysis["created_at"] = sess.created_at.isoformat()
+
     return EggAnalysisResponse(**analysis)
 
 
@@ -526,6 +558,19 @@ async def analyze_dual_egg_images(
     try:
         from app.ai.egg_tray_service import analyze_dual_egg_trays
         analysis = analyze_dual_egg_trays(top_image_bytes, side_image_bytes)
+        sess = record_egg_count_session(
+            tray_count=analysis.get("tray_count", 0),
+            egg_count=analysis.get("egg_count", 0),
+            expected_egg_count=analysis.get("expected_egg_count", 0),
+            missing_egg_count=analysis.get("missing_egg_count", 0),
+            source_type="DUAL_VIEW",
+            image_filename=f"{getattr(top_image, 'filename', 'top.jpg')}+{getattr(side_image, 'filename', 'side.jpg')}",
+            detection_mode="dual_ai",
+            confidence=0.9
+        )
+        if sess:
+            analysis["session_id"] = sess.id
+            analysis["created_at"] = sess.created_at.isoformat()
         return EggAnalysisResponse(**analysis)
     except Exception as exc:
         logger.warning("Dedicated egg tray YOLO dual analysis notice: %s. Trying detector fallback...", exc)
@@ -535,7 +580,21 @@ async def analyze_dual_egg_images(
             analysis = detector.analyze_dual(top_image_bytes, side_image_bytes, top_content_type, side_content_type, target)
             if target == "trays" and analysis.get("success"):
                 analysis["egg_count"] = analysis.get("tray_count", 0) * 30
+            sess = record_egg_count_session(
+                tray_count=analysis.get("tray_count", 0),
+                egg_count=analysis.get("egg_count", 0),
+                expected_egg_count=analysis.get("expected_egg_count", 0),
+                missing_egg_count=analysis.get("missing_egg_count", 0),
+                source_type="DUAL_VIEW",
+                image_filename=f"{getattr(top_image, 'filename', 'top.jpg')}+{getattr(side_image, 'filename', 'side.jpg')}",
+                detection_mode="dual_ai",
+                confidence=0.9
+            )
+            if sess:
+                analysis["session_id"] = sess.id
+                analysis["created_at"] = sess.created_at.isoformat()
             return EggAnalysisResponse(**analysis)
+
         except Exception as fallback_exc:
             logger.error("Dual egg analysis fallback failed: %s", fallback_exc, exc_info=True)
             raise HTTPException(status_code=502, detail=f"Unable to analyze dual images: {str(exc)}")
@@ -687,7 +746,7 @@ async def thermal_analyze(
         else:
             result = await run_in_threadpool(process_thermal_image, image_bytes, min_temp, max_temp)
             result.pop("annotated_frame", None)
-        return result
+            return result
             
     except Exception as exc:
         import traceback
@@ -795,4 +854,136 @@ async def stream_uploaded_count(path: str):
     
     count = STREAM_COUNTS.get(path, 0)
     return {"count": count}
+
+
+# ─── Egg Count Session Management Endpoints ──────────────────────────────────
+import uuid
+from app.database.models import EggCountSession
+from app.schemas.schemas import EggCountSessionCreate, EggCountSessionResponse
+
+def record_egg_count_session(
+    tray_count: int,
+    egg_count: int,
+    expected_egg_count: int = 0,
+    missing_egg_count: int = 0,
+    source_type: str = "IMAGE_UPLOAD",
+    image_filename: str = None,
+    detection_mode: str = "yolo",
+    confidence: float = 0.85,
+    notes: str = None
+) -> Optional[EggCountSession]:
+    """Helper to persist an egg detection session."""
+    try:
+        from app.database.session import SessionLocal
+        db = SessionLocal()
+        try:
+            sess = EggCountSession(
+                id=str(uuid.uuid4()),
+                created_at=datetime.utcnow(),
+                source_type=source_type,
+                image_filename=image_filename or "scan.jpg",
+                tray_count=max(0, tray_count or 0),
+                egg_count=max(0, egg_count or 0),
+                expected_egg_count=max(0, expected_egg_count or (tray_count * 30 if tray_count else 0)),
+                missing_egg_count=max(0, missing_egg_count or 0),
+                detection_mode=detection_mode,
+                confidence=float(confidence or 0.85),
+                notes=notes
+            )
+            db.add(sess)
+            db.commit()
+            db.refresh(sess)
+            return sess
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"[EggCountSession Record Error] {e}")
+        return None
+
+
+@router.post("/egg-sessions", response_model=EggCountSessionResponse)
+def create_egg_count_session(payload: EggCountSessionCreate, db: Session = Depends(get_db)):
+    """Save an egg detection session with date, timestamp, trays, eggs, and deductions."""
+    sess = EggCountSession(
+        id=str(uuid.uuid4()),
+        created_at=datetime.utcnow(),
+        source_type=payload.source_type,
+        image_filename=payload.image_filename,
+        tray_count=payload.tray_count,
+        egg_count=payload.egg_count,
+        expected_egg_count=payload.expected_egg_count or (payload.tray_count * 30),
+        missing_egg_count=payload.missing_egg_count,
+        detection_mode=payload.detection_mode,
+        confidence=payload.confidence,
+        notes=payload.notes
+    )
+    db.add(sess)
+    db.commit()
+    db.refresh(sess)
+    return sess
+
+
+@router.get("/egg-sessions", response_model=list[EggCountSessionResponse])
+def get_egg_count_sessions(limit: int = 50, db: Session = Depends(get_db)):
+    """Retrieve recent egg count sessions, ordered newest first."""
+    return db.query(EggCountSession).order_by(EggCountSession.created_at.desc()).limit(limit).all()
+
+
+@router.delete("/egg-sessions/{session_id}")
+def delete_egg_count_session(session_id: str, db: Session = Depends(get_db)):
+    """Delete a specific egg count session by ID."""
+    sess = db.query(EggCountSession).filter(EggCountSession.id == session_id).first()
+    if not sess:
+        raise HTTPException(status_code=404, detail="Session record not found")
+    db.delete(sess)
+    db.commit()
+    return {"success": True, "message": "Egg count record deleted successfully"}
+
+
+@router.delete("/egg-sessions")
+def clear_all_egg_count_sessions(db: Session = Depends(get_db)):
+    """Clear all historical egg count sessions."""
+    db.query(EggCountSession).delete()
+    db.commit()
+    return {"success": True, "message": "All egg count records cleared"}
+
+
+@router.get("/egg-sessions/daily-summary")
+def get_egg_sessions_daily_summary(db: Session = Depends(get_db)):
+    """Return daily total egg and tray counts grouped by date."""
+    sessions = db.query(EggCountSession).order_by(EggCountSession.created_at.desc()).all()
+    day_map = {}
+    for s in sessions:
+        date_str = s.created_at.strftime("%Y-%m-%d")
+        formatted = s.created_at.strftime("%d %b %Y")
+        if date_str not in day_map:
+            day_map[date_str] = {
+                "date": date_str,
+                "formatted_date": formatted,
+                "total_eggs": 0,
+                "total_trays": 0,
+                "expected_eggs": 0,
+                "missing_eggs": 0,
+                "sessions_count": 0,
+                "sessions": []
+            }
+        day_map[date_str]["total_eggs"] += (s.egg_count or 0)
+        day_map[date_str]["total_trays"] += (s.tray_count or 0)
+        day_map[date_str]["expected_eggs"] += (s.expected_egg_count or 0)
+        day_map[date_str]["missing_eggs"] += (s.missing_egg_count or 0)
+        day_map[date_str]["sessions_count"] += 1
+        day_map[date_str]["sessions"].append({
+            "id": s.id,
+            "time": s.created_at.strftime("%I:%M:%S %p"),
+            "tray_count": s.tray_count,
+            "egg_count": s.egg_count,
+            "expected_egg_count": s.expected_egg_count,
+            "missing_egg_count": s.missing_egg_count,
+            "detection_mode": s.detection_mode,
+            "source_type": s.source_type,
+            "confidence": s.confidence,
+            "notes": s.notes
+        })
+    return list(day_map.values())
+
 

@@ -382,6 +382,10 @@ class DashboardStats(BaseModel):
     blockchain_records: int
     evidence_today: int
     evidence_this_week: int
+    today_eggs: Optional[int] = 0
+    today_trays: Optional[int] = 0
+    today_missing_eggs: Optional[int] = 0
+    today_hens: Optional[int] = 0
 
 
 class DepartmentStats(BaseModel):
@@ -427,4 +431,36 @@ class HenCountSessionResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ─── Egg Count Sessions ───────────────────────────────────────────────────────
+
+class EggCountSessionCreate(BaseModel):
+    source_type: str = "IMAGE_UPLOAD"  # "IMAGE_UPLOAD", "DUAL_VIEW", "LIVE_CAMERA", "YOLO_SCAN"
+    image_filename: Optional[str] = None
+    tray_count: int = 0
+    egg_count: int = 0
+    expected_egg_count: int = 0
+    missing_egg_count: int = 0
+    detection_mode: str = "yolo"
+    confidence: float = 0.0
+    notes: Optional[str] = None
+
+
+class EggCountSessionResponse(BaseModel):
+    id: str
+    created_at: datetime
+    source_type: str
+    image_filename: Optional[str] = None
+    tray_count: int = 0
+    egg_count: int = 0
+    expected_egg_count: int = 0
+    missing_egg_count: int = 0
+    detection_mode: str = "yolo"
+    confidence: float = 0.0
+    notes: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
 

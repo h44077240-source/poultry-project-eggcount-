@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { aiApi } from '../services/api'
 import {
@@ -13,6 +13,12 @@ import {
   X,
   RefreshCw,
   Zap,
+  Calendar,
+  Clock,
+  Trash2,
+  History,
+  Egg,
+  Package,
 } from 'lucide-react'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -102,6 +108,115 @@ export default function EggCounterPage() {
     confidence: 0,
   })
   const [liveDetections, setLiveDetections] = useState<any[]>([])
+
+  // Saved Egg Count Session History & Daily Logs
+  const [eggSessions, setEggSessions] = useState<any[]>([])
+  const [loadingSessions, setLoadingSessions] = useState(false)
+  const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null)
+
+  const fetchEggSessions = useCallback(async () => {
+    try {
+      setLoadingSessions(true)
+      const resp = await aiApi.getEggSessions(100)
+      if (resp && resp.data) {
+        setEggSessions(Array.isArray(resp.data) ? resp.data : [])
+      }
+    } catch (e) {
+      console.warn('Failed to fetch egg sessions:', e)
+    } finally {
+      setLoadingSessions(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchEggSessions()
+  }, [fetchEggSessions])
+
+  const deleteSessionRecord = async (id: string) => {
+    try {
+      await aiApi.deleteEggSession(id)
+      setEggSessions(prev => prev.filter(s => s.id !== id))
+      setSaveSuccessMsg('Record deleted successfully')
+      setTimeout(() => setSaveSuccessMsg(null), 3000)
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
+  const clearAllSessions = async () => {
+    if (!window.confirm('Are you sure you want to clear all egg count records?')) return
+    try {
+      await aiApi.clearEggSessions()
+      setEggSessions([])
+      setSaveSuccessMsg('All records cleared')
+      setTimeout(() => setSaveSuccessMsg(null), 3000)
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
+  const { dailySummaries, todayTotalEggs, todayTotalTrays, todayMissingEggs } = useMemo(() => {
+    const map = new Map<string, {
+      dateKey: string;
+      formattedDate: string;
+      isToday: boolean;
+      totalEggs: number;
+      totalTrays: number;
+      expectedEggs: number;
+      missingEggs: number;
+      sessionsCount: number;
+      recentSessions: any[];
+    }>()
+
+    const todayDateObj = new Date()
+    const todayFormatted = todayDateObj.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+    const todayKey = todayDateObj.toISOString().slice(0, 10)
+
+    eggSessions.forEach((s) => {
+      const d = new Date(s.created_at)
+      const dateKey = isNaN(d.getTime()) ? 'Unknown' : d.toISOString().slice(0, 10)
+      const formattedDate = isNaN(d.getTime())
+        ? 'Unknown Date'
+        : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+      const isToday = formattedDate === todayFormatted || dateKey === todayKey
+
+      const eggs = Number(s.egg_count) || 0
+      const trays = Number(s.tray_count) || 0
+      const expected = Number(s.expected_egg_count) || (trays * 30)
+      const missing = Number(s.missing_egg_count) || 0
+
+      const existing = map.get(dateKey) || {
+        dateKey,
+        formattedDate,
+        isToday,
+        totalEggs: 0,
+        totalTrays: 0,
+        expectedEggs: 0,
+        missingEggs: 0,
+        sessionsCount: 0,
+        recentSessions: [],
+      }
+
+      existing.totalEggs += eggs
+      existing.totalTrays += trays
+      existing.expectedEggs += expected
+      existing.missingEggs += missing
+      existing.sessionsCount += 1
+      existing.recentSessions.push(s)
+
+      map.set(dateKey, existing)
+    })
+
+    const list = Array.from(map.values()).sort((a, b) => b.dateKey.localeCompare(a.dateKey))
+    const todayItem = map.get(todayKey) || list.find(item => item.isToday) || null
+
+    return {
+      dailySummaries: list,
+      todayTotalEggs: todayItem ? todayItem.totalEggs : 0,
+      todayTotalTrays: todayItem ? todayItem.totalTrays : 0,
+      todayMissingEggs: todayItem ? todayItem.missingEggs : 0,
+    }
+  }, [eggSessions])
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const cameraInputRef = useRef<HTMLInputElement>(null)
@@ -522,6 +637,17 @@ export default function EggCounterPage() {
         })
         setOpenaiResult(null)
         setStatus(`Live Capture Complete! ${stats.egg_count} eggs detected.`)
+        // Auto-save live camera session
+        aiApi.createEggSession({
+          source_type: 'LIVE_CAMERA',
+          image_filename: 'live_camera_capture.jpg',
+          tray_count: stats.tray_count,
+          egg_count: stats.egg_count,
+          expected_egg_count: stats.expected_egg_count,
+          missing_egg_count: stats.missing_egg_count,
+          detection_mode: 'live_scanner',
+          confidence: stats.confidence || 0.85
+        }).then(() => fetchEggSessions()).catch(() => {})
       }
       stopCamera()
     }, 'image/jpeg', 0.92)
@@ -612,6 +738,7 @@ export default function EggCounterPage() {
         setOpenaiResult(null)
       }
       setStatus('Analysis complete.')
+      fetchEggSessions()
     } catch (err: any) {
       console.error(err);
       let detail = 'Failed to process image. Please try again.';
@@ -2017,6 +2144,288 @@ export default function EggCounterPage() {
           )}
         </div>
       </div>
+
+      {/* ─── Today's Live Production Summary Banner ─── */}
+      <div
+        className="card"
+        style={{
+          marginTop: 28,
+          padding: '20px 24px',
+          background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.08) 0%, rgba(217, 119, 6, 0.04) 100%)',
+          border: '1px solid rgba(245, 158, 11, 0.3)',
+          borderRadius: 16,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ width: 44, height: 44, borderRadius: 12, background: 'rgba(245, 158, 11, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Egg size={24} color="#f59e0b" />
+            </div>
+            <div>
+              <div style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                Today's Verified Egg Production
+              </div>
+              <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                Live daily aggregate across all verified egg tray detection batches
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <div style={{ padding: '8px 16px', background: '#ffffff', borderRadius: 10, border: '1px solid rgba(0,0,0,0.08)', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+              <div style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Today's Eggs</div>
+              <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#d97706' }}>{todayTotalEggs.toLocaleString()}</div>
+            </div>
+            <div style={{ padding: '8px 16px', background: '#ffffff', borderRadius: 10, border: '1px solid rgba(0,0,0,0.08)', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+              <div style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Today's Trays</div>
+              <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#2563eb' }}>{todayTotalTrays.toLocaleString()}</div>
+            </div>
+            <div style={{ padding: '8px 16px', background: '#ffffff', borderRadius: 10, border: '1px solid rgba(0,0,0,0.08)', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+              <div style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Deductions (Missing)</div>
+              <div style={{ fontSize: '1.4rem', fontWeight: 800, color: todayMissingEggs > 0 ? '#dc2626' : '#10b981' }}>
+                {todayMissingEggs > 0 ? `-${todayMissingEggs}` : '0'}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ─── Daily Egg & Tray Count Summary (Date-Wise Grid) ─── */}
+      <div className="card" style={{ marginTop: 24, padding: '24px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 18 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <Calendar size={22} color="#f59e0b" />
+            <div>
+              <h3 style={{ fontSize: '1.2rem', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
+                Daily Egg & Tray Production Summary (Date-Wise)
+              </h3>
+              <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', margin: 0 }}>
+                Historical production totals grouped by calendar date
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={fetchEggSessions}
+            disabled={loadingSessions}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '7px 14px',
+              borderRadius: 8,
+              background: 'transparent',
+              border: '1px solid var(--border-subtle)',
+              color: 'var(--text-primary)',
+              cursor: 'pointer',
+              fontSize: '0.82rem',
+              fontWeight: 600,
+            }}
+          >
+            <RefreshCw size={14} className={loadingSessions ? 'animate-spin' : ''} />
+            <span>Refresh</span>
+          </button>
+        </div>
+
+        {dailySummaries.length === 0 ? (
+          <div style={{ padding: '36px 20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.92rem' }}>
+            No egg count sessions recorded yet. Run single, dual, or live detection above to log daily totals.
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 16 }}>
+            {dailySummaries.map((day) => {
+              const isToday = day.isToday;
+              const hasMissing = day.missingEggs > 0;
+              return (
+                <div
+                  key={day.dateKey}
+                  style={{
+                    background: isToday ? 'linear-gradient(135deg, #ffffff 0%, #fffbeb 100%)' : 'var(--bg-elevated)',
+                    border: isToday ? '2px solid #f59e0b' : '1px solid rgba(0,0,0,0.08)',
+                    borderRadius: 14,
+                    padding: '18px',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+                    position: 'relative',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ fontSize: '0.92rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                      {day.formattedDate}
+                    </div>
+                    {isToday && (
+                      <span style={{ fontSize: '0.68rem', fontWeight: 700, background: '#f59e0b', color: '#ffffff', padding: '2px 8px', borderRadius: 6 }}>
+                        TODAY
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 12 }}>
+                    <span style={{ fontSize: '1.9rem', fontWeight: 800, color: '#d97706', lineHeight: 1 }}>
+                      {day.totalEggs.toLocaleString()}
+                    </span>
+                    <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)' }}>total eggs</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '0.78rem', fontWeight: 700, background: 'rgba(245,158,11,0.15)', color: '#b45309', padding: '3px 9px', borderRadius: 6 }}>
+                      📦 {day.totalTrays} Trays
+                    </span>
+                    {hasMissing ? (
+                      <span style={{ fontSize: '0.78rem', fontWeight: 700, background: 'rgba(239,68,68,0.12)', color: '#dc2626', padding: '3px 9px', borderRadius: 6 }}>
+                        ⚠️ {day.missingEggs} Deducted
+                      </span>
+                    ) : (
+                      <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#059669', background: 'rgba(16,185,129,0.1)', padding: '3px 9px', borderRadius: 6 }}>
+                        ✓ 100% Full Trays
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 12, display: 'flex', justifyContent: 'space-between', borderTop: '1px solid rgba(0,0,0,0.05)', paddingTop: 10 }}>
+                    <span>{day.sessionsCount} {day.sessionsCount === 1 ? 'batch' : 'batches'}</span>
+                    {day.recentSessions.length > 0 && (
+                      <span>Last scan: {new Date(day.recentSessions[0].created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* ─── Detailed Detection Timestamp History & Deduction Logs ─── */}
+      <div className="card" style={{ marginTop: 24, padding: '24px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 18 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <History size={22} color="#2563eb" />
+            <div>
+              <h3 style={{ fontSize: '1.2rem', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
+                Detection Timestamp History & Deduction Logs
+              </h3>
+              <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', margin: 0 }}>
+                Exact detection time, tray breakdown, and egg deductions per verification run
+              </p>
+            </div>
+          </div>
+          {eggSessions.length > 0 && (
+            <button
+              type="button"
+              onClick={clearAllSessions}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '6px 12px',
+                borderRadius: 8,
+                background: 'rgba(239,68,68,0.1)',
+                border: '1px solid rgba(239,68,68,0.3)',
+                color: '#dc2626',
+                cursor: 'pointer',
+                fontSize: '0.8rem',
+                fontWeight: 600,
+              }}
+            >
+              <Trash2 size={14} />
+              <span>Clear History</span>
+            </button>
+          )}
+        </div>
+
+        {saveSuccessMsg && (
+          <div style={{ marginBottom: 14, padding: '8px 14px', background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: 8, color: '#059669', fontSize: '0.85rem', fontWeight: 600 }}>
+            ✓ {saveSuccessMsg}
+          </div>
+        )}
+
+        {eggSessions.length === 0 ? (
+          <div style={{ padding: '36px 20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+            No individual detection logs recorded yet.
+          </div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.88rem' }}>
+              <thead>
+                <tr style={{ borderBottom: '2px solid var(--border-subtle)', color: 'var(--text-muted)' }}>
+                  <th style={{ padding: '12px 14px' }}>Date & Timestamp</th>
+                  <th style={{ padding: '12px 14px' }}>Source / Mode</th>
+                  <th style={{ padding: '12px 14px' }}>Trays</th>
+                  <th style={{ padding: '12px 14px' }}>Expected Eggs</th>
+                  <th style={{ padding: '12px 14px' }}>Verified Eggs</th>
+                  <th style={{ padding: '12px 14px' }}>Deduction (Missing)</th>
+                  <th style={{ padding: '12px 14px', textAlign: 'right' }}>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {eggSessions.map((session, idx) => {
+                  const sDate = new Date(session.created_at);
+                  const formattedDate = isNaN(sDate.getTime()) ? 'Unknown' : sDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+                  const formattedTime = isNaN(sDate.getTime()) ? '' : sDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                  const hasMissing = (session.missing_egg_count || 0) > 0;
+                  return (
+                    <tr
+                      key={session.id}
+                      style={{
+                        borderBottom: idx === eggSessions.length - 1 ? 'none' : '1px solid var(--border-subtle)',
+                        background: idx % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.015)',
+                      }}
+                    >
+                      <td style={{ padding: '12px 14px', whiteSpace: 'nowrap' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, color: 'var(--text-primary)' }}>
+                          <Clock size={14} color="#f59e0b" />
+                          <span>{formattedTime}</span>
+                        </div>
+                        <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)', marginLeft: 20 }}>
+                          {formattedDate}
+                        </div>
+                      </td>
+                      <td style={{ padding: '12px 14px' }}>
+                        <span style={{ fontSize: '0.78rem', fontWeight: 600, padding: '3px 8px', borderRadius: 6, background: 'rgba(37,99,235,0.1)', color: '#2563eb' }}>
+                          {session.detection_mode === 'dual_ai' ? 'Dual View' : session.detection_mode === 'openai' ? 'OpenAI Vision' : session.detection_mode === 'live_scanner' ? 'Live Scanner' : 'YOLO'}
+                        </span>
+                      </td>
+                      <td style={{ padding: '12px 14px', fontWeight: 700, color: '#d97706' }}>
+                        {session.tray_count}
+                      </td>
+                      <td style={{ padding: '12px 14px', color: 'var(--text-muted)' }}>
+                        {session.expected_egg_count || (session.tray_count * 30)}
+                      </td>
+                      <td style={{ padding: '12px 14px', fontWeight: 800, color: 'var(--text-primary)' }}>
+                        {session.egg_count}
+                      </td>
+                      <td style={{ padding: '12px 14px' }}>
+                        {hasMissing ? (
+                          <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#dc2626', background: 'rgba(239,68,68,0.12)', padding: '2px 8px', borderRadius: 6 }}>
+                            -{session.missing_egg_count} missing
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#059669' }}>
+                            ✓ 0 missing
+                          </span>
+                        )}
+                      </td>
+                      <td style={{ padding: '12px 14px', textAlign: 'right' }}>
+                        <button
+                          type="button"
+                          onClick={() => deleteSessionRecord(session.id)}
+                          title="Delete Record"
+                          style={{
+                            background: 'transparent',
+                            border: 'none',
+                            color: '#94a3b8',
+                            cursor: 'pointer',
+                            padding: 4,
+                          }}
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
+

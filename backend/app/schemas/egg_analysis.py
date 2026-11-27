@@ -40,6 +40,9 @@ class EggAnalysisResponse(BaseModel):
     stack_height: Optional[int] = Field(default=None, description="Max stack height detected in side view")
     col_heights: Optional[list] = Field(default=None, description="List of detected column layer heights")
     auto_swapped: Optional[bool] = Field(default=False, description="Whether view orientation was automatically swapped")
+    session_id: Optional[str] = Field(default=None, description="Database record ID for this egg count session")
+    created_at: Optional[str] = Field(default=None, description="ISO timestamp when detection occurred")
+
 
 
 class ChatAnalyzeResponse(BaseModel):

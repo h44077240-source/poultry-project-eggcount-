@@ -503,3 +503,18 @@ class HenCountSession(Base):
     visible_count = Column(Integer, default=0)
     notes = Column(Text, nullable=True)
 
+class EggCountSession(Base):
+    __tablename__ = "egg_count_sessions"
+    id = Column(String(36), primary_key=True, default=gen_uuid)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    source_type = Column(String(50), nullable=False) # "IMAGE_UPLOAD", "DUAL_VIEW", "LIVE_CAMERA", "YOLO_SCAN"
+    image_filename = Column(String(255), nullable=True)
+    tray_count = Column(Integer, default=0)
+    egg_count = Column(Integer, default=0)
+    expected_egg_count = Column(Integer, default=0)
+    missing_egg_count = Column(Integer, default=0) # deduction
+    detection_mode = Column(String(50), default="yolo") # yolo, openai, dual_ai
+    confidence = Column(Float, default=0.0)
+    notes = Column(Text, nullable=True)
+
+

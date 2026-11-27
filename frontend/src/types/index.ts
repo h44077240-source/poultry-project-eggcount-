@@ -148,6 +148,45 @@ export interface DashboardStats {
   blockchain_records: number
   evidence_today: number
   evidence_this_week: number
+  today_eggs?: number
+  today_trays?: number
+  today_missing_eggs?: number
+  today_hens?: number
+}
+
+export interface EggCountSessionRecord {
+  id: string
+  created_at: string
+  source_type: string
+  image_filename?: string
+  tray_count: number
+  egg_count: number
+  expected_egg_count: number
+  missing_egg_count: number
+  detection_mode: string
+  confidence: number
+  notes?: string
+}
+
+export interface DailyEggSummary {
+  date: string
+  formatted_date: string
+  total_eggs: number
+  total_trays: number
+  expected_eggs: number
+  missing_eggs: number
+  sessions_count: number
+  recent_sessions?: Array<{
+    id: string
+    time: string
+    tray_count: number
+    egg_count: number
+    missing_egg_count: number
+    detection_mode: string
+    source_type: string
+    confidence: number
+    notes?: string
+  }>
 }
 
 export interface PaginatedResponse<T> {
