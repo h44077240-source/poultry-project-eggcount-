@@ -223,8 +223,12 @@ async def tracker_upload(
         clean_name = re.sub(r'[^a-zA-Z0-9_.-]', '_', Path(raw_name).name)
         safe_filename = clean_name or f"video_{int(time.time())}.mp4"
         temp_path = UPLOAD_DIR / safe_filename
-        with open(temp_path, "wb") as buffer:
+        part_path = temp_path.with_suffix(temp_path.suffix + ".part")
+        
+        with open(part_path, "wb") as buffer:
             shutil.copyfileobj(actual_file.file, buffer, length=1024*1024)
+            
+        part_path.replace(temp_path)
 
         # Mirror uploaded video across all server upload paths so it is accessible everywhere
         mirror_dirs = [
@@ -312,7 +316,7 @@ def stream_video_file(filename: str):
         for d in search_dirs:
             for fname in [clean_filename, sanitized_filename, base_file]:
                 p = d / fname
-                if p.exists() and p.is_file() and p.stat().st_size > 0:
+                if p.exists() and p.is_file() and p.stat().st_size > 1000:
                     filepath = str(p)
                     break
             if filepath:

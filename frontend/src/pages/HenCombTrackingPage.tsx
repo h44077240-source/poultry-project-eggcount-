@@ -442,9 +442,11 @@ export default function HenCombTrackingPage() {
     const cleanName = file.name.replace(/[^a-zA-Z0-9_.-]/g, '_') || 'video.mp4'
 
     // Open stream player screen IMMEDIATELY with zero wait ("takunuu" open aagum)
-    setIsStreamLoading(true)
-    setStreamUrl(`${activeBackendUrl}/stream_video/${encodeURIComponent(cleanName)}?t=${Date.now()}`)
     setStreamMode('video')
+    setStreamUrl(null)
+    setIsStreamLoading(true)
+    setUploadProgress(0)
+    setUploadStatusText('Uploading video to AI server...')
 
     const formData = new FormData()
     formData.append('file', file)
@@ -453,23 +455,47 @@ export default function HenCombTrackingPage() {
     const xhr = new XMLHttpRequest()
     xhrRef.current = xhr
 
+    xhr.upload.onprogress = (evt) => {
+      if (evt.lengthComputable) {
+        const pct = Math.round((evt.loaded / evt.total) * 100)
+        setUploadProgress(pct)
+        setUploadStatusText(`Uploading video... ${pct}%`)
+      }
+    }
+
     xhr.onload = () => {
       xhrRef.current = null
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
           const resp = JSON.parse(xhr.responseText)
           const targetFilename = (resp && resp.filename) ? resp.filename : cleanName
-          if (targetFilename !== cleanName) {
+          setUploadProgress(100)
+          setUploadStatusText('Starting AI comb detection stream...')
+          setTimeout(() => {
             setStreamUrl(`${activeBackendUrl}/stream_video/${encodeURIComponent(targetFilename)}?t=${Date.now()}`)
-          }
-        } catch (_) {}
+            setIsStreamLoading(false)
+            setUploadProgress(null)
+            setUploadStatusText(null)
+          }, 350)
+        } catch (_) {
+          setStreamUrl(`${activeBackendUrl}/stream_video/${encodeURIComponent(cleanName)}?t=${Date.now()}`)
+          setIsStreamLoading(false)
+          setUploadProgress(null)
+          setUploadStatusText(null)
+        }
       } else {
         setErrorMsg('Video upload failed on server. Please try again.')
+        setIsStreamLoading(false)
+        setUploadProgress(null)
+        setUploadStatusText(null)
       }
     }
     xhr.onerror = () => {
       xhrRef.current = null
       setErrorMsg('Network error while uploading video to server.')
+      setIsStreamLoading(false)
+      setUploadProgress(null)
+      setUploadStatusText(null)
     }
 
     xhr.open('POST', `${activeBackendUrl}/upload`, true)
@@ -2214,6 +2240,23 @@ export default function HenCombTrackingPage() {
                     style={{ maxWidth: '100%', maxHeight: '75vh', objectFit: 'contain' }}
                     alt="AI Stream"
                   />
+                </div>
+              ) : isStreamLoading ? (
+                <div style={{ position: 'relative', width: '100%', height: '100%', minHeight: 440, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', background: '#0a0f1d', borderRadius: 14, overflow: 'hidden', padding: 24, gap: 14 }}>
+                  <div className="spinner" style={{ width: 44, height: 44, border: '3px solid rgba(16,185,129,0.2)', borderTopColor: '#10b981', borderRadius: '50%' }} />
+                  <div style={{ color: '#10b981', fontWeight: 700, fontSize: '1rem', textAlign: 'center' }}>
+                    {uploadStatusText || 'Initializing AI Comb Detection Stream...'}
+                  </div>
+                  {uploadProgress !== null && (
+                    <div style={{ width: '80%', maxWidth: 360, height: 8, background: 'rgba(255,255,255,0.1)', borderRadius: 4, overflow: 'hidden' }}>
+                      <div style={{ width: `${uploadProgress}%`, height: '100%', background: 'linear-gradient(90deg, #10b981, #34d399)', transition: 'width 0.2s ease' }} />
+                    </div>
+                  )}
+                  {currentVideoFilename && (
+                    <div style={{ fontSize: '0.82rem', color: '#94a3b8' }}>
+                      {currentVideoFilename}
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div style={{ position: 'relative', width: '100%', height: '100%', minHeight: 440, display: 'flex', justifyContent: 'center', alignItems: 'center', background: '#0a0f1d', borderRadius: 14, overflow: 'hidden' }}>
