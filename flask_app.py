@@ -548,7 +548,12 @@ def _sync_generate_frames(video_source, ref_settings=None):
         if OUT_W < OUT_H:
             init_in_zone.sort(key=lambda d: -d["center"][1])
         else:
-            init_in_zone.sort(key=lambda d: (d["center"][1] // 40, d["center"][0]))
+            # Clean Tier-based Sequential Ordering (Line 1: Top Tier, Line 2: Bottom Tier)
+            # Within each line, combs are numbered strictly Left-to-Right without zig-zagging
+            tier_split = OUT_H * 0.42
+            top_tier = sorted([d for d in init_in_zone if d["center"][1] < tier_split], key=lambda d: d["center"][0])
+            bot_tier = sorted([d for d in init_in_zone if d["center"][1] >= tier_split], key=lambda d: d["center"][0])
+            init_in_zone = top_tier + bot_tier
         for d in init_in_zone:
             hid = next_id
             next_id += 1
