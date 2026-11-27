@@ -447,8 +447,8 @@ export default function HenCombTrackingPage() {
     setStreamUrl(null)
     setStreamError(false)
     setIsStreamLoading(true)
-    setUploadProgress(0)
-    setUploadStatusText('Uploading video to AI server...')
+    setUploadProgress(null)
+    setUploadStatusText('Initializing AI Comb Detection Stream...')
 
     const formData = new FormData()
     formData.append('file', file)
@@ -457,44 +457,31 @@ export default function HenCombTrackingPage() {
     const xhr = new XMLHttpRequest()
     xhrRef.current = xhr
 
-    xhr.upload.onprogress = (evt) => {
-      if (evt.lengthComputable) {
-        const pct = Math.round((evt.loaded / evt.total) * 100)
-        setUploadProgress(pct)
-        setUploadStatusText(`Uploading video... ${pct}%`)
-      }
-    }
-
     xhr.onload = () => {
       xhrRef.current = null
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
           const resp = JSON.parse(xhr.responseText)
           const targetFilename = (resp && resp.filename) ? resp.filename : cleanName
-          setUploadProgress(100)
-          setUploadStatusText('Starting AI comb detection stream...')
+          setUploadStatusText('Starting AI Comb Detection Stream...')
           setTimeout(() => {
             setStreamUrl(`${activeBackendUrl}/stream_video/${encodeURIComponent(targetFilename)}?t=${Date.now()}`)
-            setUploadProgress(null)
             setUploadStatusText(null)
-          }, 300)
+          }, 250)
         } catch (_) {
           setStreamUrl(`${activeBackendUrl}/stream_video/${encodeURIComponent(cleanName)}?t=${Date.now()}`)
-          setUploadProgress(null)
           setUploadStatusText(null)
         }
       } else {
-        setErrorMsg('Video upload failed on server. Please try again.')
+        setErrorMsg('Video processing failed on server. Please try again.')
         setIsStreamLoading(false)
-        setUploadProgress(null)
         setUploadStatusText(null)
       }
     }
     xhr.onerror = () => {
       xhrRef.current = null
-      setErrorMsg('Network error while uploading video to server.')
+      setErrorMsg('Network error while processing video on server.')
       setIsStreamLoading(false)
-      setUploadProgress(null)
       setUploadStatusText(null)
     }
 
@@ -523,11 +510,8 @@ export default function HenCombTrackingPage() {
     setPendingVideoFile(file)
     setShowUploadChoiceModal(false)
 
-    // Option 2: Instant local playback & 30 FPS AI comb detection (ZERO loading wait, TAKUNUU open aagum!)
-    startInstantLocalPlayback(file)
-
-    // Silent background upload so video is preserved on server without any UI blocking
-    silentBackgroundUpload(file)
+    // Option 1: Server OpenCV video stream (exact same as Localhost) with instant open & clean spinner
+    startCloudUpload(file)
     if (e.target) e.target.value = ''
   }
 
@@ -730,8 +714,7 @@ export default function HenCombTrackingPage() {
         setErrorMsg(null)
         const ext = mimeType.includes('mp4') ? 'mp4' : 'webm'
         const file = new File([blob], `live_camera_recorded_${Date.now()}.${ext}`, { type: mimeType })
-        startInstantLocalPlayback(file)
-        silentBackgroundUpload(file)
+        startCloudUpload(file)
       }
       recorder.start(500)
       mediaRecorderRef.current = recorder
@@ -2282,11 +2265,6 @@ export default function HenCombTrackingPage() {
                   <div style={{ color: '#10b981', fontWeight: 700, fontSize: '1rem', textAlign: 'center' }}>
                     {uploadStatusText || 'Initializing AI Comb Detection Stream...'}
                   </div>
-                  {uploadProgress !== null && (
-                    <div style={{ width: '80%', maxWidth: 360, height: 8, background: 'rgba(255,255,255,0.1)', borderRadius: 4, overflow: 'hidden' }}>
-                      <div style={{ width: `${uploadProgress}%`, height: '100%', background: 'linear-gradient(90deg, #10b981, #34d399)', transition: 'width 0.2s ease' }} />
-                    </div>
-                  )}
                   {currentVideoFilename && (
                     <div style={{ fontSize: '0.82rem', color: '#94a3b8' }}>
                       {currentVideoFilename}
