@@ -567,22 +567,13 @@ def _sync_generate_frames(video_source, ref_settings=None):
                 pts_in = []
                 pt_map = []
                 for hid in active_ids:
-                    x1, y1, x2, y2 = hens[hid]["box"]
                     cx, cy = hens[hid]["center"]
-                    bw, bh = x2 - x1, y2 - y1
-                    if is_cloud:
-                        quad_pts = [(cx, cy), (cx, cy - bh * 0.15)]
-                    else:
-                        quad_pts = [
-                            (cx, cy),
-                            (cx - bw * 0.22, cy - bh * 0.22),
-                            (cx + bw * 0.22, cy - bh * 0.22),
-                            (cx - bw * 0.22, cy + bh * 0.22),
-                            (cx + bw * 0.22, cy + bh * 0.22),
-                        ]
-                    for p in quad_pts:
-                        pts_in.append([[p[0], p[1]]])
-                        pt_map.append(hid)
+                    bh = hens[hid]["box"][3] - hens[hid]["box"][1]
+                    # Sample center of comb and slightly above within head crest
+                    pts_in.append([[cx, cy]])
+                    pt_map.append(hid)
+                    pts_in.append([[cx, cy - bh * 0.18]])
+                    pt_map.append(hid)
 
                 pts_in_arr = np.array(pts_in, dtype=np.float32)
                 lk_win = (17, 17) if is_cloud else (21, 21)
@@ -602,8 +593,8 @@ def _sync_generate_frames(video_source, ref_settings=None):
                             hen_shifts[hid].append((dx, dy))
 
                 for hid, shifts in hen_shifts.items():
-                    # Only apply optical flow if hen was recently confirmed by AI (lost <= 2)
-                    if len(shifts) >= 1 and hens[hid]["lost"] <= 2:
+                    # Follow the hen's motion smoothly frame-by-frame
+                    if len(shifts) >= 1 and hens[hid]["lost"] <= 3:
                         mdx = float(np.median([s[0] for s in shifts]))
                         mdy = float(np.median([s[1] for s in shifts]))
                         b = hens[hid]["box"]
@@ -612,8 +603,6 @@ def _sync_generate_frames(video_source, ref_settings=None):
                             (hens[hid]["box"][0] + hens[hid]["box"][2]) / 2.0,
                             (hens[hid]["box"][1] + hens[hid]["box"][3]) / 2.0
                         )
-                    else:
-                        hens[hid]["lost"] += 1
 
             prev_gray = gray
 
@@ -637,9 +626,9 @@ def _sync_generate_frames(video_source, ref_settings=None):
                         hx, hy = h["center"]
                         dist = math.hypot(dcx - hx, dcy - hy)
                         iou = compute_iou(d["box"], h["box"])
-                        # Match strictly against CURRENT position (no stale home matching)
-                        if dist <= 24.0 or (dist <= 36.0 and iou >= 0.20):
-                            cost = (1.0 - iou) * 0.4 + (dist / 24.0) * 0.6
+                        # Follow the hen smoothly across natural head bobbing/movement (up to 55px radius)
+                        if dist <= 55.0 or (dist <= 70.0 and iou >= 0.15):
+                            cost = (1.0 - iou) * 0.4 + (dist / 55.0) * 0.6
                             cands.append((cost, d_idx, hid))
 
                 cands.sort(key=lambda x: x[0])
@@ -651,11 +640,12 @@ def _sync_generate_frames(video_source, ref_settings=None):
                     d = fresh[d_idx]
                     nb = d["box"]
                     ob = hens[hid]["box"]
+                    # Smoothly follow the moving hen:
                     hens[hid]["box"] = [
-                        0.45 * nb[0] + 0.55 * ob[0],
-                        0.45 * nb[1] + 0.55 * ob[1],
-                        0.45 * nb[2] + 0.55 * ob[2],
-                        0.45 * nb[3] + 0.55 * ob[3],
+                        0.60 * nb[0] + 0.40 * ob[0],
+                        0.60 * nb[1] + 0.40 * ob[1],
+                        0.60 * nb[2] + 0.40 * ob[2],
+                        0.60 * nb[3] + 0.40 * ob[3],
                     ]
                     hens[hid]["center"] = (
                         (hens[hid]["box"][0] + hens[hid]["box"][2]) / 2.0,
@@ -668,7 +658,8 @@ def _sync_generate_frames(video_source, ref_settings=None):
                     if hid not in used_hens:
                         hens[hid]["lost"] += 1
 
-                # Stage 2: Register New Hens entering the zone (Tentative confirmation eliminates all spurious 1-frame empty-space noise)
+                # Stage 2: Register New Hens entering the zone
+                # Anti-duplicate: NEVER put duplicate boxes on a hen that was already detected!
                 updated_tentative = set()
                 for d_idx, d in enumerate(fresh):
                     if d_idx in matched_dets:
@@ -679,18 +670,17 @@ def _sync_generate_frames(video_source, ref_settings=None):
                     if not (12 <= dcx <= OUT_W - 12 and 12 <= dcy <= OUT_H - 12):
                         continue
 
-                    # Anti-duplicate: Only reject if near an actively tracked live hen (lost <= 3)
-                    # Prevents dead-zone drops while stopping duplicate IDs on the same hen
+                    # Strict anti-duplicate: If near ANY tracked hen (within 48px or IOU > 0.18), REJECT duplicate box!
                     is_near = any(
-                        math.hypot(dcx - h["center"][0], dcy - h["center"][1]) < 20.0 or compute_iou(d["box"], h["box"]) > 0.30
-                        for h in hens.values() if h["lost"] <= 3
+                        math.hypot(dcx - h["center"][0], dcy - h["center"][1]) < 48.0 or compute_iou(d["box"], h["box"]) > 0.18
+                        for h in hens.values() if h["lost"] <= 4
                     )
                     if is_near:
                         continue
 
                     # Match against tentative tracks
                     best_tid = None
-                    best_tdist = 30.0
+                    best_tdist = 36.0
                     for tid, tdata in tentative_hens.items():
                         tdist = math.hypot(dcx - tdata["center"][0], dcy - tdata["center"][1])
                         if tdist < best_tdist:
@@ -704,8 +694,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
                         t["lost"] = 0
                         t["center"] = d["center"]
                         t["box"] = list(d["box"])
-                        # Require at least 2 consistent frame hits to promote to permanent counted hen
-                        # (Eliminates all phantom 1-frame flickers and repeat counts!)
+                        # Require 2 consistent frame hits to promote to permanent counted hen
                         if t["hits"] >= 2:
                             hid = next_id
                             next_id += 1

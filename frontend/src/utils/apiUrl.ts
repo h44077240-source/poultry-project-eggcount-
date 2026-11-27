@@ -29,27 +29,38 @@ export function sanitizeBackendUrl(url: string | null | undefined): string {
 }
 
 export function getApiBaseUrl(): string {
-  // 1. User manual override (stored in localStorage via UI settings)
-  if (typeof window !== 'undefined') {
-    const custom = localStorage.getItem('giotag_backend_url') || localStorage.getItem('API_URL')
-    if (custom && custom.trim()) {
-      return sanitizeBackendUrl(custom)
-    }
-  }
-
-  // 2. Vite Build-time Environment Variable (if populated during deploy)
-  const envUrl = (import.meta.env.VITE_API_URL || '').trim()
-  if (envUrl) {
-    return sanitizeBackendUrl(envUrl)
-  }
-
-  // 3. Smart Cloud Auto-Resolution for Render & Railway
+  // 1. Smart Cloud Auto-Resolution for Railway & Render (Host check takes priority on Railway)
   if (typeof window !== 'undefined') {
     const host = window.location.hostname
     // If running directly on Railway, use same-origin relative URLs
     if (host.includes('.up.railway.app')) {
       return ''
     }
+  }
+
+  // 2. User manual override (stored in localStorage via UI settings)
+  if (typeof window !== 'undefined') {
+    const custom = localStorage.getItem('giotag_backend_url') || localStorage.getItem('API_URL')
+    if (custom && custom.trim()) {
+      const sanitized = sanitizeBackendUrl(custom)
+      // On HTTPS, do not allow stale http://localhost or insecure URLs
+      if (window.location.protocol === 'https:' && sanitized.startsWith('http://')) {
+        // ignore insecure override on HTTPS production
+      } else {
+        return sanitized
+      }
+    }
+  }
+
+  // 3. Vite Build-time Environment Variable (if populated during deploy)
+  const envUrl = (import.meta.env.VITE_API_URL || '').trim()
+  if (envUrl) {
+    return sanitizeBackendUrl(envUrl)
+  }
+
+  // 4. Smart Cloud Auto-Resolution for Render & Static Hosts
+  if (typeof window !== 'undefined') {
+    const host = window.location.hostname
     if (host.includes('.onrender.com')) {
       if (host.includes('-frontend.')) {
         return `https://${host.replace('-frontend.', '-backend.')}`
@@ -64,7 +75,7 @@ export function getApiBaseUrl(): string {
     }
   }
 
-  // 4. Localhost / same-origin fallback
+  // 5. Localhost / same-origin fallback
   return ''
 }
 

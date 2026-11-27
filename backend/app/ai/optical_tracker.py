@@ -405,18 +405,12 @@ class OpticalHenTracker:
                 for hid in active_ids:
                     x1, y1, x2, y2 = self.hens[hid]["box"]
                     cx, cy = self.hens[hid]["center"]
-                    bw = x2 - x1
                     bh = y2 - y1
-                    quad_pts = [
-                        (cx, cy),
-                        (cx - bw * 0.22, cy - bh * 0.22),
-                        (cx + bw * 0.22, cy - bh * 0.22),
-                        (cx - bw * 0.22, cy + bh * 0.22),
-                        (cx + bw * 0.22, cy + bh * 0.22),
-                    ]
-                    for p in quad_pts:
-                        pts_in.append([[p[0], p[1]]])
-                        pt_map.append(hid)
+                    # Sample center of comb and slightly above within head crest
+                    pts_in.append([[cx, cy]])
+                    pt_map.append(hid)
+                    pts_in.append([[cx, cy - bh * 0.18]])
+                    pt_map.append(hid)
 
                 pts_in_arr = np.array(pts_in, dtype=np.float32)
                 pts_out, status, _ = cv2.calcOpticalFlowPyrLK(
@@ -430,12 +424,12 @@ class OpticalHenTracker:
                     if status[i][0] == 1:
                         dx = float(pts_out[i][0][0] - pts_in_arr[i][0][0])
                         dy = float(pts_out[i][0][1] - pts_in_arr[i][0][1])
-                        # Clamp displacement: max 10px per frame prevents box drifting into neighboring hen
-                        if abs(dx) <= 10.0 and abs(dy) <= 10.0:
+                        # Clamp displacement: max 12px per frame prevents box drifting into neighboring hen
+                        if abs(dx) <= 12.0 and abs(dy) <= 12.0:
                             hen_shifts[hid].append((dx, dy))
 
                 for hid, shifts in hen_shifts.items():
-                    if len(shifts) >= 1 and self.hens[hid]["lost"] <= 2:
+                    if len(shifts) >= 1 and self.hens[hid]["lost"] <= 3:
                         mdx = float(np.median([s[0] for s in shifts]))
                         mdy = float(np.median([s[1] for s in shifts]))
                         b = self.hens[hid]["box"]
@@ -491,9 +485,9 @@ class OpticalHenTracker:
                             continue
                         dist = math.hypot(cx - hx, cy - hy)
                         iou = _box_iou(hdata["box"], det["box"])
-                        # Dynamic match distance (up to 44px or 56px if IoU overlap >= 0.10)
-                        if dist <= 44.0 or (dist <= 56.0 and iou >= 0.10):
-                            cost = (1.0 - iou) * 0.4 + (dist / 44.0) * 0.6
+                        # Dynamic match distance (up to 55px or 70px if IoU overlap >= 0.15)
+                        if dist <= 55.0 or (dist <= 70.0 and iou >= 0.15):
+                            cost = (1.0 - iou) * 0.4 + (dist / 55.0) * 0.6
                             active_matches.append((cost, det_idx, hid))
 
                 active_matches.sort(key=lambda m: m[0])
@@ -509,8 +503,8 @@ class OpticalHenTracker:
                     old_b = self.hens[hid]["box"]
 
                     # Smooth position & box update: follows hen head smoothly, ZERO box jumping
-                    SMOOTH = 0.45
-                    SMOOTH_INV = 0.55
+                    SMOOTH = 0.60
+                    SMOOTH_INV = 0.40
                     self.hens[hid]["box"] = [
                         SMOOTH * nb[0] + SMOOTH_INV * old_b[0],
                         SMOOTH * nb[1] + SMOOTH_INV * old_b[1],
@@ -529,7 +523,6 @@ class OpticalHenTracker:
                         hdata["lost"] += 1
 
                 # Stage 2: Register New Hen entering the zone with strict deduplication & multi-frame confirmation
-                min_new_dist = 22.0
                 unmatched_fresh = [det for det_idx, det in enumerate(fresh) if det_idx not in used_dets and det.get("conf", 0.0) >= 0.04]
                 unmatched_fresh.sort(key=lambda d: -d["center"][1])
                 updated_t = set()
@@ -540,10 +533,10 @@ class OpticalHenTracker:
                     if not is_in_zone(cx, cy):
                         continue
 
-                    # Anti-duplicate: Only reject if near an actively tracked hen (lost <= 12)
+                    # Strict anti-duplicate: If near ANY tracked hen (within 48px or IOU > 0.18), REJECT duplicate box!
                     is_near_active = any(
-                        math.hypot(cx - h["center"][0], cy - h["center"][1]) < min_new_dist or _box_iou(det["box"], h["box"]) > 0.35
-                        for h in self.hens.values() if h["lost"] <= 12
+                        math.hypot(cx - h["center"][0], cy - h["center"][1]) < 48.0 or _box_iou(det["box"], h["box"]) > 0.18
+                        for h in self.hens.values() if h["lost"] <= 4
                     )
                     if is_near_active:
                         continue
