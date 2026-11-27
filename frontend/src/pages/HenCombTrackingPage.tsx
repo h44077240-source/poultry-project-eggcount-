@@ -428,10 +428,6 @@ export default function HenCombTrackingPage() {
   const startCloudUpload = (file: File) => {
     setShowUploadChoiceModal(false)
     setErrorMsg(null)
-    setActiveLoadingCard('upload')
-    setIsProcessing(true)
-    setUploadProgress(0)
-    setUploadStatusText('Uploading video to AI server...')
     setCurrentSessionSource('UPLOADED_VIDEO')
     setCurrentVideoFilename(file.name)
 
@@ -445,19 +441,17 @@ export default function HenCombTrackingPage() {
 
     const cleanName = file.name.replace(/[^a-zA-Z0-9_.-]/g, '_') || 'video.mp4'
 
+    // Open stream player screen IMMEDIATELY with zero wait ("takunuu" open aagum)
+    setIsStreamLoading(true)
+    setStreamUrl(`${activeBackendUrl}/stream_video/${encodeURIComponent(cleanName)}?t=${Date.now()}`)
+    setStreamMode('video')
+
     const formData = new FormData()
     formData.append('file', file)
+    formData.append('video', file)
 
     const xhr = new XMLHttpRequest()
     xhrRef.current = xhr
-
-    xhr.upload.onprogress = (evt) => {
-      if (evt.lengthComputable) {
-        const pct = Math.round((evt.loaded / evt.total) * 100)
-        setUploadProgress(pct)
-        setUploadStatusText(`Uploading video... ${pct}%`)
-      }
-    }
 
     xhr.onload = () => {
       xhrRef.current = null
@@ -465,41 +459,17 @@ export default function HenCombTrackingPage() {
         try {
           const resp = JSON.parse(xhr.responseText)
           const targetFilename = (resp && resp.filename) ? resp.filename : cleanName
-          setUploadProgress(100)
-          setUploadStatusText('Starting AI comb detection stream...')
-          setTimeout(() => {
-            setActiveLoadingCard(null)
-            setIsProcessing(false)
-            setUploadProgress(null)
-            setUploadStatusText(null)
+          if (targetFilename !== cleanName) {
             setStreamUrl(`${activeBackendUrl}/stream_video/${encodeURIComponent(targetFilename)}?t=${Date.now()}`)
-            setStreamMode('video')
-            setIsStreamLoading(false)
-          }, 250)
-        } catch (_) {
-          setActiveLoadingCard(null)
-          setIsProcessing(false)
-          setUploadProgress(null)
-          setUploadStatusText(null)
-          setStreamUrl(`${activeBackendUrl}/stream_video/${encodeURIComponent(cleanName)}?t=${Date.now()}`)
-          setStreamMode('video')
-          setIsStreamLoading(false)
-        }
+          }
+        } catch (_) {}
       } else {
         setErrorMsg('Video upload failed on server. Please try again.')
-        setActiveLoadingCard(null)
-        setIsProcessing(false)
-        setUploadProgress(null)
-        setUploadStatusText(null)
       }
     }
     xhr.onerror = () => {
       xhrRef.current = null
       setErrorMsg('Network error while uploading video to server.')
-      setActiveLoadingCard(null)
-      setIsProcessing(false)
-      setUploadProgress(null)
-      setUploadStatusText(null)
     }
 
     xhr.open('POST', `${activeBackendUrl}/upload`, true)
@@ -2228,6 +2198,12 @@ export default function HenCombTrackingPage() {
                 </div>
               ) : streamUrl ? (
                 <div style={{ position: 'relative', width: '100%', height: '100%', minHeight: 440, display: 'flex', justifyContent: 'center', alignItems: 'center', background: '#0a0f1d', borderRadius: 14, overflow: 'hidden' }}>
+                  {isStreamLoading && (
+                    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'rgba(10,15,29,0.85)', zIndex: 4, gap: 12 }}>
+                      <div className="spinner" style={{ width: 44, height: 44, border: '3px solid rgba(16,185,129,0.2)', borderTopColor: '#10b981', borderRadius: '50%' }} />
+                      <div style={{ color: '#10b981', fontWeight: 700, fontSize: '0.95rem' }}>Loading AI Comb Detection Stream...</div>
+                    </div>
+                  )}
                   <img
                     key={streamUrl}
                     src={streamUrl}
