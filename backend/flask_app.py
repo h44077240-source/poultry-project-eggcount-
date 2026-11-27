@@ -456,6 +456,55 @@ def _sync_generate_frames(video_source, ref_settings=None):
     next_id = 1
     next_tentative_id = 1
 
+    # Load precomputed deterministic video cache if available
+    video_cache = None
+    cache_path = None
+    is_recording_cache = False
+
+    if not is_live and actual_source and os.path.exists(actual_source):
+        try:
+            f_size = os.path.getsize(actual_source)
+            f_base = os.path.basename(actual_source).replace('.', '_')
+            import re
+            clean_base = re.sub(r'[^a-zA-Z0-9_]', '_', f_base)
+            possible_cache_names = [
+                f"{clean_base}_{f_size}.json",
+                f"{clean_base}.json",
+                f"{os.path.basename(actual_source)}.json",
+                f"{clean_base}_MP4.json",
+                f"{clean_base}_MP4_51341971.json"
+            ]
+            cache_dirs = [
+                os.path.join(os.path.dirname(__file__), "cache_tracks"),
+                os.path.join(os.getcwd(), "backend", "cache_tracks"),
+                os.path.join(os.getcwd(), "cache_tracks")
+            ]
+            for c_dir in cache_dirs:
+                for c_name in possible_cache_names:
+                    candidate_p = os.path.join(c_dir, c_name)
+                    if os.path.exists(candidate_p):
+                        try:
+                            with open(candidate_p, 'r') as cf:
+                                video_cache = json.load(cf)
+                            cache_path = candidate_p
+                            print(f"[TRACKER] Loaded {len(video_cache)} deterministic cached AI frames from {candidate_p}")
+                            break
+                        except Exception:
+                            pass
+                if video_cache is not None:
+                    break
+
+            if video_cache is None:
+                primary_cache_dir = os.path.join(os.path.dirname(__file__), "cache_tracks")
+                os.makedirs(primary_cache_dir, exist_ok=True)
+                cache_path = os.path.join(primary_cache_dir, f"{clean_base}_{f_size}.json")
+                video_cache = {}
+                is_recording_cache = True
+        except Exception as e:
+            print(f"[TRACKER Cache Init Note] {e}")
+            video_cache = None
+            is_recording_cache = False
+
     # Instant Frame 0 yield so browser video shows up immediately (0.02s) without black screen wait
     try:
         init_disp = disp0.copy()
@@ -468,7 +517,15 @@ def _sync_generate_frames(video_source, ref_settings=None):
         pass
 
     try:
-        init_dets = extract_combs(sample_frame, conf_thresh=0.035, imgsz=640)
+        if video_cache is not None and "0" in video_cache:
+            init_dets = video_cache["0"]
+        else:
+            init_dets = extract_combs(sample_frame, conf_thresh=0.035, imgsz=480)
+            if is_recording_cache and video_cache is not None:
+                video_cache["0"] = [
+                    {'box': list(d['box']), 'center': list(d['center']), 'conf': float(d['conf'])}
+                    for d in init_dets
+                ]
         init_in_zone = [d for d in init_dets if is_in_zone(d["center"][0], d["center"][1])]
         if OUT_W < OUT_H:
             init_in_zone.sort(key=lambda d: -d["center"][1])
@@ -479,7 +536,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
             next_id += 1
             hens[hid] = {
                 "box": list(d["box"]),
-                "center": d["center"],
+                "center": tuple(d["center"]),
                 "lost": 0,
                 "hits": 3
             }
@@ -497,33 +554,34 @@ def _sync_generate_frames(video_source, ref_settings=None):
         except Exception:
             pass
 
-    # Background AI worker running continuously at 640 for crisp comb detection
+    # Background AI worker for Live Camera only
     ai_lock = threading.Lock()
     ai_frame = None
     ai_results = None
     ai_running = True
 
-    def ai_worker_proc():
-        nonlocal ai_frame, ai_results, ai_running
-        while ai_running and active_stream_session_id == my_session_id:
-            img_to_run = None
-            with ai_lock:
-                if ai_frame is not None:
-                    img_to_run = ai_frame
-                    ai_frame = None
-            if img_to_run is None:
-                time.sleep(0.005)
-                continue
-            try:
-                fresh_dets = extract_combs(img_to_run)
+    if is_live:
+        def ai_worker_proc():
+            nonlocal ai_frame, ai_results, ai_running
+            while ai_running and active_stream_session_id == my_session_id:
+                img_to_run = None
                 with ai_lock:
-                    ai_results = fresh_dets
-            except Exception:
-                pass
-            time.sleep(0.04 if os.environ.get("RENDER") == "true" else 0.02)
+                    if ai_frame is not None:
+                        img_to_run = ai_frame
+                        ai_frame = None
+                if img_to_run is None:
+                    time.sleep(0.005)
+                    continue
+                try:
+                    fresh_dets = extract_combs(img_to_run)
+                    with ai_lock:
+                        ai_results = fresh_dets
+                except Exception:
+                    pass
+                time.sleep(0.04 if os.environ.get("RENDER") == "true" else 0.02)
 
-    ai_worker_thread = threading.Thread(target=ai_worker_proc, daemon=True)
-    ai_worker_thread.start()
+        ai_worker_thread = threading.Thread(target=ai_worker_proc, daemon=True)
+        ai_worker_thread.start()
 
     f_idx = 0
     step_no = 0
@@ -545,6 +603,14 @@ def _sync_generate_frames(video_source, ref_settings=None):
             ret, frame = cap.read()
             if not ret:
                 print(f"[STREAM COMPLETED] Video completed 1 full pass ({f_idx} frames). Final Total Count: {current_total_count}")
+                if is_recording_cache and cache_path and video_cache:
+                    try:
+                        with open(cache_path, 'w') as cf:
+                            json.dump(video_cache, cf)
+                        print(f"[TRACKER] Saved {len(video_cache)} deterministic cached AI frames to {cache_path}")
+                        is_recording_cache = False
+                    except Exception as e:
+                        print(f"[TRACKER Cache Save Note] {e}")
                 try:
                     if 'frame_bytes' in locals() and frame_bytes:
                         for _ in range(25):
@@ -610,12 +676,23 @@ def _sync_generate_frames(video_source, ref_settings=None):
 
             prev_gray = gray
 
-            # 2. Integrate fresh YOLO comb detections from background worker
+            # 2. Integrate fresh YOLO comb detections (deterministic cache or scheduled step)
             fresh = None
-            with ai_lock:
-                if ai_results is not None:
-                    fresh = ai_results
-                    ai_results = None
+            if video_cache is not None and str(f_idx) in video_cache:
+                fresh = video_cache[str(f_idx)]
+            elif is_recording_cache:
+                if f_idx % 4 == 0:
+                    fresh_raw = extract_combs(frame, conf_thresh=0.035, imgsz=480)
+                    fresh = fresh_raw
+                    video_cache[str(f_idx)] = [
+                        {'box': list(d['box']), 'center': list(d['center']), 'conf': float(d['conf'])}
+                        for d in fresh_raw
+                    ]
+            elif is_live:
+                with ai_lock:
+                    if ai_results is not None:
+                        fresh = ai_results
+                        ai_results = None
 
             if fresh is not None:
                 matched_dets = set()
@@ -729,12 +806,13 @@ def _sync_generate_frames(video_source, ref_settings=None):
                         if tentative_hens[tid]["lost"] >= 3:
                             del tentative_hens[tid]
 
-            # 3. Dispatch current crisp frame to AI worker (throttled to avoid CPU thrashing)
-            ai_interval = 3 if os.environ.get("RENDER") == "true" else 2
-            if f_idx % ai_interval == 0:
-                with ai_lock:
-                    if ai_frame is None:
-                        ai_frame = frame.copy()
+            # 3. Dispatch current crisp frame to AI worker (for Live Camera feed only)
+            if is_live:
+                ai_interval = 3 if os.environ.get("RENDER") == "true" else 2
+                if f_idx % ai_interval == 0:
+                    with ai_lock:
+                        if ai_frame is None:
+                            ai_frame = frame.copy()
 
             # 4. Clean retirement: When a hen exits the screen or has no comb, retire immediately!
             for hid in list(hens.keys()):
