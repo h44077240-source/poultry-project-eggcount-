@@ -326,15 +326,31 @@ def stream_video_file(filename: str):
         time.sleep(0.1)
 
     if not filepath or not os.path.exists(filepath):
-        if "demo" in clean_filename.lower():
-            for df in [
-                PROJECT_ROOT / "demo_hen_video.mp4",
-                PROJECT_ROOT / "backend" / "demo_hen_video.mp4",
-                PROJECT_ROOT / "backend" / "sample_videos" / "DJI_20260911155924_0026_S.MP4",
-                PROJECT_ROOT / "sample_videos" / "DJI_20260911155924_0026_S.MP4"
-            ]:
-                if df.exists():
-                    filepath = str(df)
+        candidates = [
+            PROJECT_ROOT / "backend" / "sample_videos" / "DJI_20260911155924_0026_S.MP4",
+            PROJECT_ROOT / "sample_videos" / "DJI_20260911155924_0026_S.MP4",
+            Path("backend/sample_videos/DJI_20260911155924_0026_S.MP4").resolve(),
+            Path("sample_videos/DJI_20260911155924_0026_S.MP4").resolve(),
+            PROJECT_ROOT / "backend" / "demo_hen_video.mp4",
+            PROJECT_ROOT / "demo_hen_video.mp4",
+            Path("backend/demo_hen_video.mp4").resolve(),
+            Path("demo_hen_video.mp4").resolve(),
+        ]
+        for df in candidates:
+            if df.exists() and df.is_file() and df.stat().st_size > 1000:
+                filepath = str(df)
+                break
+        if not filepath:
+            for d in search_dirs:
+                if d.exists():
+                    try:
+                        for f in d.glob("*.mp4"):
+                            if f.is_file() and f.stat().st_size > 1000:
+                                filepath = str(f)
+                                break
+                    except Exception:
+                        pass
+                if filepath:
                     break
         if not filepath:
             raise HTTPException(status_code=404, detail=f"Uploaded video '{filename}' not found on server")
