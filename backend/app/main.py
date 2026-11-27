@@ -244,7 +244,8 @@ if static_dir and (static_dir / "index.html").exists():
             ext = target.suffix.lower()
             if ext in {".mp4", ".webm"}:
                 return stream_file_with_range(target, request, media_type=f"video/{ext[1:]}")
-            return FileResponse(str(target))
+            headers = {"Cache-Control": "no-cache, no-store, must-revalidate"} if ext in {".html", ".js"} else {}
+            return FileResponse(str(target), headers=headers)
 
         # If a specific static asset with known extension was requested but doesn't exist, return 404 (do not return index.html)
         req_ext = Path(full_path).suffix.lower()
@@ -253,7 +254,7 @@ if static_dir and (static_dir / "index.html").exists():
 
         index = static_dir / "index.html"
         if index.is_file():
-            return FileResponse(str(index))
+            return FileResponse(str(index), headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
         return JSONResponse(status_code=404, content={"detail": "Not Found"})
 else:
     @app.get("/", tags=["Root"])

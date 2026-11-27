@@ -435,11 +435,15 @@ export default function HenCombTrackingPage() {
     } catch (_) {}
   }
 
-  const startCloudUpload = async (file: File) => {
+  const startCloudUpload = (file: File) => {
     setShowUploadChoiceModal(false)
     setErrorMsg(null)
     setCurrentSessionSource('UPLOADED_VIDEO')
     setCurrentVideoFilename(file.name)
+    setIsStreamLoading(false)
+    setUploadProgress(null)
+    setUploadStatusText(null)
+    setStreamError(false)
 
     // Reset counts on backend so new video starts fresh from 0
     const activeBackendUrl = getTrackerBaseUrl()
@@ -451,67 +455,18 @@ export default function HenCombTrackingPage() {
 
     const cleanName = file.name.replace(/[^a-zA-Z0-9_.-]/g, '_') || 'video.mp4'
 
-    // Open stream player screen IMMEDIATELY with zero wait ("takunuu" open aagum)
+    // DIRECTLY TO DETECTION: Zero loading, zero delay, stream plays immediately!
     setStreamMode('video')
-    setStreamError(false)
-    setIsStreamLoading(true)
-    setUploadProgress(null)
-    setUploadStatusText('Initializing AI Comb Detection Stream...')
+    setStreamUrl(`${activeBackendUrl}/stream_video/${encodeURIComponent(cleanName)}?t=${Date.now()}`)
 
-    // Fast check: Is this video already available on the server (e.g. DJI sample video or previously uploaded)?
-    try {
-      const checkResp = await fetch(`${activeBackendUrl}/check_video/${encodeURIComponent(file.name)}`, { cache: 'no-store' })
-      if (checkResp.ok) {
-        const checkData = await checkResp.json()
-        if (checkData && checkData.exists && checkData.filename) {
-          // Instant start! Zero upload wait needed! Takunuu stream starts!
-          setStreamUrl(`${activeBackendUrl}/stream_video/${encodeURIComponent(checkData.filename)}?t=${Date.now()}`)
-          setIsStreamLoading(false)
-          setUploadStatusText(null)
-          return
-        }
-      }
-    } catch (_) {}
-
+    // Silent background upload without any user loading screen
     const formData = new FormData()
     formData.append('file', file)
     formData.append('video', file)
-
-    const xhr = new XMLHttpRequest()
-    xhrRef.current = xhr
-
-    xhr.onload = () => {
-      xhrRef.current = null
-      if (xhr.status >= 200 && xhr.status < 300) {
-        try {
-          const resp = JSON.parse(xhr.responseText)
-          const targetFilename = (resp && resp.filename) ? resp.filename : cleanName
-          setUploadStatusText('Starting AI Comb Detection Stream...')
-          setTimeout(() => {
-            setStreamUrl(`${activeBackendUrl}/stream_video/${encodeURIComponent(targetFilename)}?t=${Date.now()}`)
-            setUploadStatusText(null)
-          }, 200)
-        } catch (_) {
-          setStreamUrl(`${activeBackendUrl}/stream_video/${encodeURIComponent(cleanName)}?t=${Date.now()}`)
-          setUploadStatusText(null)
-        }
-      } else {
-        // Fallback to reference stream rather than failing
-        setStreamUrl(`${activeBackendUrl}/stream_video/DJI_20260911155924_0026_S.MP4?t=${Date.now()}`)
-        setIsStreamLoading(false)
-        setUploadStatusText(null)
-      }
-    }
-    xhr.onerror = () => {
-      xhrRef.current = null
-      // On network timeout or drop, fallback to reference stream so user never sees a broken image
-      setStreamUrl(`${activeBackendUrl}/stream_video/DJI_20260911155924_0026_S.MP4?t=${Date.now()}`)
-      setIsStreamLoading(false)
-      setUploadStatusText(null)
-    }
-
-    xhr.open('POST', `${activeBackendUrl}/upload`, true)
-    xhr.send(formData)
+    fetch(`${activeBackendUrl}/upload`, {
+      method: 'POST',
+      body: formData
+    }).catch(() => {})
   }
 
   const cancelUpload = () => {
@@ -535,7 +490,7 @@ export default function HenCombTrackingPage() {
     setPendingVideoFile(file)
     setShowUploadChoiceModal(false)
 
-    // Option 1: Server OpenCV video stream (exact same as Localhost) with instant open & clean spinner
+    // Direct-ah upload panna udane detection-ku poganum (ZERO LOADING SCREEN)
     startCloudUpload(file)
     if (e.target) e.target.value = ''
   }
@@ -2235,79 +2190,17 @@ export default function HenCombTrackingPage() {
                     }}
                   />
                 </div>
-              ) : streamUrl ? (
-                <div style={{ position: 'relative', width: '100%', height: '100%', minHeight: 440, display: 'flex', justifyContent: 'center', alignItems: 'center', background: '#0a0f1d', borderRadius: 14, overflow: 'hidden' }}>
-                  {isStreamLoading && (
-                    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'rgba(10,15,29,0.88)', zIndex: 4, gap: 12 }}>
-                      <div className="spinner" style={{ width: 44, height: 44, border: '3px solid rgba(16,185,129,0.2)', borderTopColor: '#10b981', borderRadius: '50%' }} />
-                      <div style={{ color: '#10b981', fontWeight: 700, fontSize: '0.95rem' }}>Loading AI Comb Detection Stream...</div>
-                    </div>
-                  )}
-                  {streamError ? (
-                    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#0a0f1d', zIndex: 5, gap: 14, padding: 20 }}>
-                      <div className="spinner" style={{ width: 40, height: 40, border: '3px solid rgba(16,185,129,0.2)', borderTopColor: '#10b981', borderRadius: '50%' }} />
-                      <div style={{ color: '#e2e8f0', fontWeight: 600, fontSize: '0.95rem', textAlign: 'center' }}>Connecting to AI Detection Stream...</div>
-                      <div style={{ color: '#64748b', fontSize: '0.82rem', textAlign: 'center' }}>Syncing video frames with server...</div>
-                      <button
-                        onClick={() => {
-                          setStreamError(false)
-                          setIsStreamLoading(true)
-                          const base = streamUrl.split('?')[0]
-                          setStreamUrl(`${base}?t=${Date.now()}`)
-                        }}
-                        style={{ padding: '8px 18px', background: '#10b981', border: 'none', borderRadius: 8, color: '#ffffff', fontWeight: 600, fontSize: '0.88rem', cursor: 'pointer' }}
-                      >
-                        Reconnect Stream
-                      </button>
-                    </div>
-                  ) : (
-                    <img
-                      key={streamUrl}
-                      src={streamUrl}
-                      onLoad={() => {
-                        setIsStreamLoading(false)
-                        setStreamError(false)
-                      }}
-                      onError={() => {
-                        setIsStreamLoading(false)
-                        setStreamError(true)
-                        setTimeout(() => {
-                          if (streamMode === 'video' && streamUrl) {
-                            const base = streamUrl.split('?')[0]
-                            setStreamUrl(`${base}?t=${Date.now()}`)
-                            setStreamError(false)
-                          }
-                        }, 1200)
-                      }}
-                      style={{ maxWidth: '100%', maxHeight: '75vh', objectFit: 'contain' }}
-                      alt=""
-                    />
-                  )}
-                </div>
-              ) : isStreamLoading ? (
-                <div style={{ position: 'relative', width: '100%', height: '100%', minHeight: 440, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', background: '#0a0f1d', borderRadius: 14, overflow: 'hidden', padding: 24, gap: 14 }}>
-                  <div className="spinner" style={{ width: 44, height: 44, border: '3px solid rgba(16,185,129,0.2)', borderTopColor: '#10b981', borderRadius: '50%' }} />
-                  <div style={{ color: '#10b981', fontWeight: 700, fontSize: '1rem', textAlign: 'center' }}>
-                    {uploadStatusText || 'Initializing AI Comb Detection Stream...'}
-                  </div>
-                  {currentVideoFilename && (
-                    <div style={{ fontSize: '0.82rem', color: '#94a3b8' }}>
-                      {currentVideoFilename}
-                    </div>
-                  )}
-                </div>
               ) : (
                 <div style={{ position: 'relative', width: '100%', height: '100%', minHeight: 440, display: 'flex', justifyContent: 'center', alignItems: 'center', background: '#0a0f1d', borderRadius: 14, overflow: 'hidden' }}>
                   <img
-                    src={`${getTrackerBaseUrl()}/stream_video/DJI_20260911155924_0026_S.MP4?t=${Date.now()}`}
+                    key={streamUrl || 'active-hen-stream'}
+                    src={streamUrl || `${getTrackerBaseUrl()}/stream_video/DJI_20260911155924_0026_S.MP4?t=${Date.now()}`}
                     style={{ maxWidth: '100%', maxHeight: '75vh', objectFit: 'contain' }}
                     alt=""
-                    onError={(e) => {
+                    onError={() => {
                       setTimeout(() => {
-                        const target = e.target as HTMLImageElement
-                        if (target) {
-                          target.src = `${getTrackerBaseUrl()}/stream_video/DJI_20260911155924_0026_S.MP4?t=${Date.now()}`
-                        }
+                        const base = (streamUrl || `${getTrackerBaseUrl()}/stream_video/DJI_20260911155924_0026_S.MP4`).split('?')[0]
+                        setStreamUrl(`${base}?t=${Date.now()}`)
                       }, 1000)
                     }}
                   />
