@@ -22,6 +22,7 @@ export default function HenCombTrackingPage() {
   const [isRecording, setIsRecording] = useState(false)
   const [recordingDuration, setRecordingDuration] = useState(0)
   const [isStreamLoading, setIsStreamLoading] = useState(false)
+  const [streamError, setStreamError] = useState(false)
 
   // Saved Session History
   const [savedSessions, setSavedSessions] = useState<any[]>([])
@@ -444,6 +445,7 @@ export default function HenCombTrackingPage() {
     // Open stream player screen IMMEDIATELY with zero wait ("takunuu" open aagum)
     setStreamMode('video')
     setStreamUrl(null)
+    setStreamError(false)
     setIsStreamLoading(true)
     setUploadProgress(0)
     setUploadStatusText('Uploading video to AI server...')
@@ -473,13 +475,11 @@ export default function HenCombTrackingPage() {
           setUploadStatusText('Starting AI comb detection stream...')
           setTimeout(() => {
             setStreamUrl(`${activeBackendUrl}/stream_video/${encodeURIComponent(targetFilename)}?t=${Date.now()}`)
-            setIsStreamLoading(false)
             setUploadProgress(null)
             setUploadStatusText(null)
-          }, 350)
+          }, 300)
         } catch (_) {
           setStreamUrl(`${activeBackendUrl}/stream_video/${encodeURIComponent(cleanName)}?t=${Date.now()}`)
-          setIsStreamLoading(false)
           setUploadProgress(null)
           setUploadStatusText(null)
         }
@@ -2147,7 +2147,8 @@ export default function HenCombTrackingPage() {
                       videoRef.current.currentTime = 0
                       videoRef.current.play().catch(() => {})
                     } else if (streamUrl) {
-                      setIsStreamLoading(false)
+                      setIsStreamLoading(true)
+                      setStreamError(false)
                       const base = streamUrl.split('?')[0]
                       setStreamUrl(`${base}?t=${Date.now()}`)
                     }
@@ -2225,21 +2226,51 @@ export default function HenCombTrackingPage() {
               ) : streamUrl ? (
                 <div style={{ position: 'relative', width: '100%', height: '100%', minHeight: 440, display: 'flex', justifyContent: 'center', alignItems: 'center', background: '#0a0f1d', borderRadius: 14, overflow: 'hidden' }}>
                   {isStreamLoading && (
-                    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'rgba(10,15,29,0.85)', zIndex: 4, gap: 12 }}>
+                    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'rgba(10,15,29,0.88)', zIndex: 4, gap: 12 }}>
                       <div className="spinner" style={{ width: 44, height: 44, border: '3px solid rgba(16,185,129,0.2)', borderTopColor: '#10b981', borderRadius: '50%' }} />
                       <div style={{ color: '#10b981', fontWeight: 700, fontSize: '0.95rem' }}>Loading AI Comb Detection Stream...</div>
                     </div>
                   )}
-                  <img
-                    key={streamUrl}
-                    src={streamUrl}
-                    onLoad={() => setIsStreamLoading(false)}
-                    onError={() => {
-                      setIsStreamLoading(false)
-                    }}
-                    style={{ maxWidth: '100%', maxHeight: '75vh', objectFit: 'contain' }}
-                    alt="AI Stream"
-                  />
+                  {streamError ? (
+                    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#0a0f1d', zIndex: 5, gap: 14, padding: 20 }}>
+                      <div className="spinner" style={{ width: 40, height: 40, border: '3px solid rgba(16,185,129,0.2)', borderTopColor: '#10b981', borderRadius: '50%' }} />
+                      <div style={{ color: '#e2e8f0', fontWeight: 600, fontSize: '0.95rem', textAlign: 'center' }}>Connecting to AI Detection Stream...</div>
+                      <div style={{ color: '#64748b', fontSize: '0.82rem', textAlign: 'center' }}>Syncing video frames with server...</div>
+                      <button
+                        onClick={() => {
+                          setStreamError(false)
+                          setIsStreamLoading(true)
+                          const base = streamUrl.split('?')[0]
+                          setStreamUrl(`${base}?t=${Date.now()}`)
+                        }}
+                        style={{ padding: '8px 18px', background: '#10b981', border: 'none', borderRadius: 8, color: '#ffffff', fontWeight: 600, fontSize: '0.88rem', cursor: 'pointer' }}
+                      >
+                        Reconnect Stream
+                      </button>
+                    </div>
+                  ) : (
+                    <img
+                      key={streamUrl}
+                      src={streamUrl}
+                      onLoad={() => {
+                        setIsStreamLoading(false)
+                        setStreamError(false)
+                      }}
+                      onError={() => {
+                        setIsStreamLoading(false)
+                        setStreamError(true)
+                        setTimeout(() => {
+                          if (streamMode === 'video' && streamUrl) {
+                            const base = streamUrl.split('?')[0]
+                            setStreamUrl(`${base}?t=${Date.now()}`)
+                            setStreamError(false)
+                          }
+                        }, 1200)
+                      }}
+                      style={{ maxWidth: '100%', maxHeight: '75vh', objectFit: 'contain' }}
+                      alt=""
+                    />
+                  )}
                 </div>
               ) : isStreamLoading ? (
                 <div style={{ position: 'relative', width: '100%', height: '100%', minHeight: 440, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', background: '#0a0f1d', borderRadius: 14, overflow: 'hidden', padding: 24, gap: 14 }}>
