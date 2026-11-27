@@ -194,6 +194,10 @@ def _sync_generate_frames(video_source, ref_settings=None):
         actual_source = str(video_source)
         if not os.path.exists(actual_source):
             fallback_demos = [
+                os.path.abspath(os.path.join(os.path.dirname(__file__), "sample_videos", "DJI_20260911155924_0026_S.MP4")),
+                os.path.abspath(os.path.join(os.getcwd(), "backend", "sample_videos", "DJI_20260911155924_0026_S.MP4")),
+                os.path.abspath(os.path.join(os.getcwd(), "sample_videos", "DJI_20260911155924_0026_S.MP4")),
+                os.path.abspath(os.path.join(os.path.dirname(__file__), "backend", "sample_videos", "DJI_20260911155924_0026_S.MP4")),
                 os.path.abspath(os.path.join(os.path.dirname(__file__), "backend", "demo_hen_video.mp4")),
                 os.path.abspath(os.path.join(os.path.dirname(__file__), "demo_hen_video.mp4")),
                 os.path.abspath(os.path.join(os.getcwd(), "backend", "demo_hen_video.mp4")),
@@ -296,7 +300,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
     NEW_HEN_MIN_DIST = 8.0  # Rejects duplicate boxes on the same hen comb while preserving adjacent hens
     MAX_LOST_MEMORY = 35  # Frame memory for lost hens before retirement
 
-    def extract_combs(f_img, conf_thresh=0.04, imgsz=None):
+    def extract_combs(f_img, conf_thresh=0.035, imgsz=None):
         if imgsz is None:
             imgsz = 640
         if active_model is None:
@@ -382,8 +386,8 @@ def _sync_generate_frames(video_source, ref_settings=None):
                 crop = comb_mask[orig_y1:orig_y2, orig_x1:orig_x2]
                 comb_px = np.count_nonzero(crop)
 
-                # Color verification: MUST contain genuine red comb pixels. Rejects non-comb regions
-                if comb_px < 3:
+                # Color verification: MUST contain genuine red comb pixels or high confidence AI detection. Rejects non-comb regions
+                if comb_px < 1 and conf < 0.14:
                     continue
 
                 # Snug Comb Centroid Localization: Locates the red comb crest at the upper part of head
@@ -424,7 +428,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
                     "conf": conf
                 })
 
-            # Comb Deduplication: Merges overlapping proposals on the SAME comb
+            # Comb Deduplication: Merges overlapping proposals on the SAME comb while preserving distinct neighbor combs
             candidates.sort(key=lambda d: d["conf"], reverse=True)
             dedup = []
             for d in candidates:
@@ -436,7 +440,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
                     b2 = ex["box"]
                     dist = math.hypot(c1[0] - c2[0], c1[1] - c2[1])
                     iou = compute_iou(b1, b2)
-                    if dist < 22.0 or iou > 0.35:
+                    if dist < 14.0 or iou > 0.40:
                         duplicate = True
                         break
                 if not duplicate:
@@ -464,7 +468,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
         pass
 
     try:
-        init_dets = extract_combs(sample_frame, conf_thresh=0.04, imgsz=640)
+        init_dets = extract_combs(sample_frame, conf_thresh=0.035, imgsz=640)
         init_in_zone = [d for d in init_dets if is_in_zone(d["center"][0], d["center"][1])]
         if OUT_W < OUT_H:
             init_in_zone.sort(key=lambda d: -d["center"][1])
@@ -621,14 +625,14 @@ def _sync_generate_frames(video_source, ref_settings=None):
                 for d_idx, d in enumerate(fresh):
                     dcx, dcy = d["center"]
                     for hid, h in hens.items():
-                        if h["lost"] > 6:
+                        if h["lost"] > 25:
                             continue
                         hx, hy = h["center"]
                         dist = math.hypot(dcx - hx, dcy - hy)
                         iou = compute_iou(d["box"], h["box"])
-                        # Follow the hen smoothly across natural head bobbing/movement (up to 55px radius)
-                        if dist <= 55.0 or (dist <= 70.0 and iou >= 0.15):
-                            cost = (1.0 - iou) * 0.4 + (dist / 55.0) * 0.6
+                        # Follow the hen smoothly across natural head bobbing/movement (up to 48px radius)
+                        if dist <= 48.0 or (dist <= 65.0 and iou >= 0.12):
+                            cost = (1.0 - iou) * 0.4 + (dist / 48.0) * 0.6
                             cands.append((cost, d_idx, hid))
 
                 cands.sort(key=lambda x: x[0])
@@ -670,10 +674,11 @@ def _sync_generate_frames(video_source, ref_settings=None):
                     if not (12 <= dcx <= OUT_W - 12 and 12 <= dcy <= OUT_H - 12):
                         continue
 
-                    # Strict anti-duplicate: If near ANY tracked hen (within 48px or IOU > 0.18), REJECT duplicate box!
+                    # Strict anti-duplicate: Reject duplicate proposals on the SAME hen (within 16px or IOU > 0.28).
+                    # Preserves adjacent hens in neighboring cages (spaced 20-35px apart) without missing them!
                     is_near = any(
-                        math.hypot(dcx - h["center"][0], dcy - h["center"][1]) < 48.0 or compute_iou(d["box"], h["box"]) > 0.18
-                        for h in hens.values() if h["lost"] <= 4
+                        math.hypot(dcx - h["center"][0], dcy - h["center"][1]) < 16.0 or compute_iou(d["box"], h["box"]) > 0.28
+                        for h in hens.values() if h["lost"] <= 15
                     )
                     if is_near:
                         continue
@@ -737,7 +742,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
                 cx, cy = hens[hid]["center"]
                 exited_screen = (cx < 4 or cx > OUT_W - 4 or cy < 4 or cy > OUT_H - 4 or
                                  b[2] < 4 or b[0] > OUT_W - 4 or b[3] < 4 or b[1] > OUT_H - 4)
-                lost_too_long = hens[hid]["lost"] > 4
+                lost_too_long = hens[hid]["lost"] > 30
                 if exited_screen or lost_too_long:
                     del hens[hid]
 
@@ -747,8 +752,8 @@ def _sync_generate_frames(video_source, ref_settings=None):
                 hid for hid, h in hens.items()
                 if h["lost"] <= 2 and (4 <= h["center"][0] <= OUT_W - 4 and 4 <= h["center"][1] <= OUT_H - 4)
             ]
-            # Spatial deduplication: Strictly PREVENT clusters of boxes in one place!
-            # If multiple tracks are near each other, only draw the single best/freshest one!
+            # Spatial deduplication: Strictly PREVENT duplicate boxes on the SAME comb!
+            # Preserves adjacent neighbor combs spaced >= 13px apart so all visible hens get boxes!
             candidate_hens.sort(key=lambda hid: (hens[hid]["lost"], -hens[hid].get("hits", 0)))
             render_hens = []
             for hid in candidate_hens:
@@ -760,7 +765,7 @@ def _sync_generate_frames(video_source, ref_settings=None):
                     c2 = hens[r_hid]["center"]
                     dist = math.hypot(c1[0] - c2[0], c1[1] - c2[1])
                     iou = compute_iou(b1, b2)
-                    if dist < 20.0 or iou > 0.30:
+                    if dist < 13.0 or iou > 0.38:
                         overlap = True
                         break
                 if not overlap:

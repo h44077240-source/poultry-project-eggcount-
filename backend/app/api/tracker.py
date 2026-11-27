@@ -421,7 +421,11 @@ def get_git_commit():
         h = str(e)
     f_path = Path(__file__).resolve().parent.parent.parent / "flask_app.py"
     f_stat = {"exists": f_path.exists(), "size": f_path.stat().st_size if f_path.exists() else 0, "mtime": f_path.stat().st_mtime if f_path.exists() else 0}
-    return {"commit": h, "latest": "fafea50", "flask_app": f_stat, "server_time": time.time()}
+    sv_dirs = [PROJECT_ROOT / "backend" / "sample_videos", PROJECT_ROOT / "sample_videos", Path("backend/sample_videos").resolve()]
+    found_dji = {}
+    for sv in sv_dirs:
+        found_dji[str(sv)] = [f.name for f in sv.iterdir()] if sv.exists() else "not_found"
+    return {"commit": h, "latest": "fafea50", "flask_app": f_stat, "sample_videos": found_dji, "server_time": time.time()}
 
 @router.get("/quick_status")
 async def quick_status():
