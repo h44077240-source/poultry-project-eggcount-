@@ -523,8 +523,11 @@ export default function HenCombTrackingPage() {
     setPendingVideoFile(file)
     setShowUploadChoiceModal(false)
 
-    // Original crisp OpenCV video stream ("palaya mari box", exactly as requested)
-    startCloudUpload(file)
+    // Option 2: Instant local playback & 30 FPS AI comb detection (ZERO loading wait, TAKUNUU open aagum!)
+    startInstantLocalPlayback(file)
+
+    // Silent background upload so video is preserved on server without any UI blocking
+    silentBackgroundUpload(file)
     if (e.target) e.target.value = ''
   }
 
@@ -727,7 +730,8 @@ export default function HenCombTrackingPage() {
         setErrorMsg(null)
         const ext = mimeType.includes('mp4') ? 'mp4' : 'webm'
         const file = new File([blob], `live_camera_recorded_${Date.now()}.${ext}`, { type: mimeType })
-        startCloudUpload(file)
+        startInstantLocalPlayback(file)
+        silentBackgroundUpload(file)
       }
       recorder.start(500)
       mediaRecorderRef.current = recorder
