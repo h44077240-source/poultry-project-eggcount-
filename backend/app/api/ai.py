@@ -605,23 +605,15 @@ async def chat_analyze(
     message: str = Form(..., description="User's question or instruction"),
     image: UploadFile = File(None, description="Optional image attachment (jpg, jpeg, png, webp)"),
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """
     POST /api/ai/chat-analyze
 
-    Conversational image-analysis assistant. Accepts a text question and an
-    optional image. Returns a natural-language reply AND (if image provided)
-    a structured analysis result.
-
-    Example:
-        message = "How many trays are there?"
-        image   = <egg tray photo>
-
-    Returns:
-        {
-            "reply": "There are approximately 18 visible egg trays.",
-            "analysis": { "egg_count": 250, "tray_count": 18, ... }
-        }
+    Conversational AI assistant for KR Group Poultry. Answers user questions about
+    farm reports, today's and date-wise egg & tray counts, hen tracking statistics,
+    evidence verification status, and suspicious upload audits. Also accepts an optional
+    image attachment to perform live visual analysis.
     """
     from app.config import settings
     from app.schemas.egg_analysis import ChatAnalyzeResponse
@@ -656,33 +648,27 @@ async def chat_analyze(
             )
         mime_type = content_type
 
-    # ── Call the Vision detector in chat mode ─────────────────────────
+    # ── Process chat query with live farm database context ─────────────────
     try:
-        from app.ai.detector_interface import get_detector
-        detector = get_detector()
-        result = detector.chat_analyze(message, image_bytes, mime_type)
-    except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc))
-    except Exception as exc:
-        try:
-            from app.ai.yolo_detector import CustomYOLODetector
-            fallback_detector = CustomYOLODetector()
-            analysis = fallback_detector.analyze(image_bytes, content_type, target)
-            return EggAnalysisResponse(**analysis)
-        except Exception:
-            pass
-        import traceback
-        traceback.print_exc()
-        err_msg = str(exc).lower()
-        if "rate limit" in err_msg or "quota" in err_msg:
-            raise HTTPException(
-                status_code=429,
-                detail="OpenAI API rate limit reached. Please wait a moment.",
-            )
-        raise HTTPException(
-            status_code=502,
-            detail="Unable to process your request. Please try again.",
+        from app.ai.farm_chat_service import handle_farm_chat_query
+        result = await handle_farm_chat_query(
+            db=db,
+            message=message,
+            image_bytes=image_bytes,
+            mime_type=mime_type
         )
+    except Exception as exc:
+        logger.error("Chat analyze error: %s", exc, exc_info=True)
+        try:
+            from app.ai.farm_chat_service import get_live_farm_data, rule_based_fallback_chat
+            farm_data = get_live_farm_data(db)
+            fallback_reply = rule_based_fallback_chat(message, farm_data)
+            result = {"reply": fallback_reply, "analysis": None}
+        except Exception:
+            result = {
+                "reply": "Vanakkam bro! Farm data load panna mudila, konjam neram கழிச்சு try pannunga bro.",
+                "analysis": None
+            }
 
     return ChatAnalyzeResponse(
         reply=result["reply"],

@@ -59,7 +59,7 @@ export default function EggAIChatPage() {
       id: uid(),
       role: 'assistant',
       text:
-        '👋 Hello! I\'m your AI Egg & Tray Vision Assistant.\n\nUpload a photo of your egg trays and ask me anything:\n• "How many trays are there?"\n• "How many eggs can you count?"\n• "What type of trays are these?"\n• "How many green plastic trays?"\n\nAttach an image using the 📎 button, then type your question.',
+        '👋 Vanakkam bro! I\'m your KR Poultry Farm & Evidence AI Assistant.\n\nEnkitta namma farm live data & reports pathi enna venumnalum kelunga:\n• "Today egg count evolo?"\n• "Total hens & today hen count evolo?"\n• "Yaru suspicious evidence upload panniruka?"\n• "27 Nov egg and tray report kudu bro"\n• "All farm reports summary thanga"\n\nKoodave egg trays or hen photos upload panna, live-aa detect panni accurate count-um solluven! 🥚🐔📊',
     },
   ])
 
@@ -109,8 +109,8 @@ export default function EggAIChatPage() {
     ])
   }
 
-  const handleSend = async () => {
-    const text = inputText.trim()
+  const sendCustomPrompt = async (textToSend: string) => {
+    const text = textToSend.trim()
     if (!text && !attachedFile) return
 
     // Determine which image to use: newly attached > session image > none
@@ -181,6 +181,10 @@ export default function EggAIChatPage() {
     }
   }
 
+  const handleSend = () => {
+    sendCustomPrompt(inputText)
+  }
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
@@ -199,7 +203,7 @@ export default function EggAIChatPage() {
           <div>
             <h1 className="page-title">AI Vision Chat</h1>
             <p className="page-subtitle">
-              Ask questions about your egg tray photo — count, type, quality.
+              Ask questions about daily egg counts, hen flock tracking, suspicious evidence, date-wise reports, or upload photos!
             </p>
           </div>
         </div>
@@ -474,9 +478,50 @@ export default function EggAIChatPage() {
         style={{
           flexShrink: 0,
           borderTop: '1px solid var(--border-subtle)',
-          paddingTop: 16,
+          paddingTop: 14,
         }}
       >
+        {/* Quick prompt suggestions */}
+        <div
+          style={{
+            display: 'flex',
+            gap: 8,
+            overflowX: 'auto',
+            paddingBottom: 10,
+            scrollbarWidth: 'none',
+            msOverflowStyle: 'none',
+          }}
+        >
+          {[
+            { label: '🥚 Today Egg Count', query: 'Today egg count evolo bro?' },
+            { label: '🐔 Today Hen Count', query: 'Today hen count evolo bro?' },
+            { label: '⚠️ Suspicious Evidence', query: 'Yaru yaru upload panna image suspicious-aa irukku?' },
+            { label: '📊 All Reports Summary', query: 'Give me complete farm report summary bro' },
+            { label: '📅 27 Nov Report', query: '27 Nov egg and hen count report kudu' },
+          ].map((chip) => (
+            <button
+              key={chip.label}
+              type="button"
+              disabled={sending}
+              onClick={() => sendCustomPrompt(chip.query)}
+              style={{
+                whiteSpace: 'nowrap',
+                padding: '6px 14px',
+                borderRadius: 20,
+                border: '1px solid var(--border-subtle, rgba(255,255,255,0.15))',
+                background: 'var(--bg-elevated)',
+                color: 'var(--text-secondary)',
+                fontSize: '0.8rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                flexShrink: 0,
+              }}
+            >
+              {chip.label}
+            </button>
+          ))}
+        </div>
         {/* Image attachment preview */}
         {attachedPreview && (
           <div
