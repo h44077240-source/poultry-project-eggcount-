@@ -56,7 +56,7 @@ interface OpenAIResult {
 }
 
 type AnalysisMode = 'openai' | 'yolo' | 'dual_ai'
-type DetectionTarget = 'eggs' | 'hens' | 'trays'
+type DetectionTarget = 'eggs' | 'trays'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -78,7 +78,7 @@ const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
 export default function EggCounterPage() {
   const { t } = useTranslation()
-  const [mode, setMode] = useState<AnalysisMode>('openai')
+  const [mode, setMode] = useState<AnalysisMode>('dual_ai')
   const [target, setTarget] = useState<DetectionTarget>('trays')
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
@@ -1008,7 +1008,7 @@ export default function EggCounterPage() {
                 border: '1px solid rgba(255,255,255,0.1)',
               }}
             >
-              {(['trays', 'eggs', 'hens'] as DetectionTarget[]).map(t => (
+              {(['trays', 'eggs'] as DetectionTarget[]).map(t => (
                 <button
                   key={t}
                   type="button"
@@ -1025,7 +1025,7 @@ export default function EggCounterPage() {
                     transition: 'all 0.2s',
                   }}
                 >
-                  {t === 'trays' ? '📦 Trays' : t === 'eggs' ? '🥚 Eggs' : '🐔 Hens'}
+                  {t === 'trays' ? '📦 Trays' : '🥚 Eggs'}
                 </button>
               ))}
             </div>
@@ -1124,26 +1124,6 @@ export default function EggCounterPage() {
           }}
         >
         <button
-          onClick={() => { setMode('openai'); setOpenaiResult(null); setYoloResult(null); setError(null); setStatus(null); }}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            padding: '8px 18px',
-            borderRadius: 7,
-            border: 'none',
-            cursor: 'pointer',
-            fontWeight: 600,
-            fontSize: '0.875rem',
-            transition: 'all 0.2s',
-            background: mode === 'openai' ? 'var(--brand-500)' : 'transparent',
-            color: mode === 'openai' ? '#fff' : 'var(--text-secondary)',
-          }}
-        >
-          <Sparkles size={15} />
-          {t('eggCounter.aiVisionBtn')}
-        </button>
-        <button
           onClick={() => { setMode('dual_ai'); setOpenaiResult(null); setYoloResult(null); setError(null); setStatus(null); setTarget('trays'); }}
           style={{
             display: 'flex',
@@ -1156,8 +1136,8 @@ export default function EggCounterPage() {
             fontWeight: 600,
             fontSize: '0.875rem',
             transition: 'all 0.2s',
-            background: mode === 'dual_ai' ? 'var(--brand-500)' : 'transparent',
-            color: mode === 'dual_ai' ? '#fff' : 'var(--text-secondary)',
+            background: 'var(--brand-500)',
+            color: '#fff',
           }}
         >
           <Sparkles size={15} />
@@ -1177,7 +1157,7 @@ export default function EggCounterPage() {
           border: '1px solid var(--border-subtle)',
         }}
       >
-        {(['eggs', 'hens', 'trays'] as DetectionTarget[]).map((targetOption) => (
+        {(['eggs', 'trays'] as DetectionTarget[]).map((targetOption) => (
           <button
             key={targetOption}
             onClick={() => { setTarget(targetOption); setOpenaiResult(null); setYoloResult(null); setError(null); setStatus(null); }}
@@ -1681,7 +1661,6 @@ export default function EggCounterPage() {
                 }}
               >
                 {/* Egg count */}
-                {(target !== 'hens' || mode === 'dual_ai') && (
                 <div
                   style={{
                     backgroundColor: 'rgba(245, 158, 11, 0.1)',
@@ -1746,7 +1725,6 @@ export default function EggCounterPage() {
                      </div>
                   )}
                 </div>
-                )}
 
                 {/* Tray count */}
                 {(target === 'trays' || mode === 'dual_ai') && (
@@ -1781,44 +1759,6 @@ export default function EggCounterPage() {
                     }}
                   >
                     {openaiResult.tray_count}
-                  </div>
-                </div>
-                )}
-
-                {/* Hen count */}
-                {target === 'hens' && (
-                <div
-                  style={{
-                    backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                    padding: '16px',
-                    borderRadius: 8,
-                    textAlign: 'center',
-                    border: '1px solid rgba(239,68,68,0.3)',
-                    gridColumn: '1 / -1',
-                  }}
-                >
-                  <div style={{ fontSize: '1.75rem', marginBottom: 4 }}>🐔</div>
-                  <div
-                    style={{
-                      color: 'var(--danger-500)',
-                      fontSize: '0.75rem',
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.5px',
-                      marginBottom: 4,
-                      fontWeight: 600,
-                    }}
-                  >
-                    {t('eggCounter.hens')}
-                  </div>
-                  <div
-                    style={{
-                      fontSize: '2.5rem',
-                      fontWeight: 'bold',
-                      color: 'var(--text-primary)',
-                      lineHeight: 1,
-                    }}
-                  >
-                    {openaiResult.hen_count ?? 0}
                   </div>
                 </div>
                 )}
@@ -2074,7 +2014,7 @@ export default function EggCounterPage() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 16, marginBottom: 24 }}>
                 <div
                   style={{
-                    backgroundColor: target === 'hens' ? 'rgba(239, 68, 68, 0.1)' : (target === 'eggs' ? 'rgba(245, 158, 11, 0.1)' : 'rgba(59, 130, 246, 0.1)'),
+                    backgroundColor: target === 'eggs' ? 'rgba(245, 158, 11, 0.1)' : 'rgba(59, 130, 246, 0.1)',
                     padding: '16px',
                     borderRadius: 8,
                     textAlign: 'center',
@@ -2082,7 +2022,7 @@ export default function EggCounterPage() {
                 >
                   <div
                     style={{
-                      color: target === 'hens' ? 'var(--danger-500)' : (target === 'eggs' ? '#f59e0b' : 'var(--brand-600)'),
+                      color: target === 'eggs' ? '#f59e0b' : 'var(--brand-600)',
                       fontSize: '0.85rem',
                       textTransform: 'uppercase',
                       letterSpacing: '0.5px',
@@ -2090,10 +2030,10 @@ export default function EggCounterPage() {
                       fontWeight: 600,
                     }}
                   >
-                    {target === 'hens' ? t('eggCounter.totalHens') : (target === 'eggs' ? t('eggCounter.totalEggs') : t('eggCounter.totalTrays'))}
+                    {target === 'eggs' ? t('eggCounter.totalEggs') : t('eggCounter.totalTrays')}
                   </div>
                   <div style={{ fontSize: '3rem', fontWeight: 'bold', color: 'var(--text-primary)' }}>
-                    {target === 'hens' ? (yoloResult.hen_count ?? 0) : (target === 'eggs' ? (yoloResult.egg_count ?? 0) : (yoloResult.tray_count ?? 0))}
+                    {target === 'eggs' ? (yoloResult.egg_count ?? 0) : (yoloResult.tray_count ?? 0)}
                   </div>
                   {target === 'trays' && yoloResult.egg_count !== undefined && yoloResult.egg_count > 0 && (
                     <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'center' }}>
@@ -2113,7 +2053,7 @@ export default function EggCounterPage() {
                       )}
                     </div>
                   )}
-                  {target !== 'hens' && yoloResult.egg_count !== undefined && yoloResult.egg_count > 0 && eggCost > 0 && (
+                  {yoloResult.egg_count !== undefined && yoloResult.egg_count > 0 && eggCost > 0 && (
                     <div style={{ fontSize: '1.2rem', color: '#10b981', marginTop: 12, fontWeight: 700, padding: '8px', backgroundColor: 'rgba(16, 185, 129, 0.1)', borderRadius: '6px', display: 'inline-block' }}>
                       Total Cost: ₹{(yoloResult.egg_count * eggCost).toFixed(2)}
                     </div>
