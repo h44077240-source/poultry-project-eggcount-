@@ -16,6 +16,8 @@ import {
   RefreshCw,
   MessageSquare,
   Sparkles,
+  Volume2,
+  VolumeX,
 } from 'lucide-react'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -139,6 +141,27 @@ function renderFormattedMessage(text: string, isUser = false) {
   )
 }
 
+/**
+ * Clean text for natural speech synthesis.
+ * Strips emojis, markdown, and transforms bullets into natural pauses.
+ */
+function cleanTextForSpeech(text: string): string {
+  if (!text) return ''
+  return text
+    // Replace bullet points with pause periods
+    .replace(/[•\-\*]\s+/g, '. ')
+    // Replace parentheses with commas for natural cadence
+    .replace(/\(([^)]+)\)/g, ', $1')
+    // Remove emojis completely
+    .replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F1E6}-\u{1F1FF}]/gu, '')
+    // Remove markdown symbols
+    .replace(/[*_#`~]/g, '')
+    // Clean up double punctuation / extra spaces
+    .replace(/\s+/g, ' ')
+    .replace(/\s*([.,?!])\s*/g, '$1 ')
+    .trim()
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function EggAIChatPage() {
@@ -164,6 +187,69 @@ export default function EggAIChatPage() {
   const [showHistory, setShowHistory] = useState(false)
   const [dailyHistory, setDailyHistory] = useState<DailyChatSummary[]>([])
   const [loadingHistory, setLoadingHistory] = useState(false)
+
+  // Voice Text-to-Speech (TTS) State
+  const [autoVoice, setAutoVoice] = useState<boolean>(() => {
+    const saved = localStorage.getItem('egg_ai_auto_voice')
+    return saved !== null ? saved === 'true' : true // Enabled by default
+  })
+  const [speakingId, setSpeakingId] = useState<string | null>(null)
+
+  const stopSpeaking = () => {
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      window.speechSynthesis.cancel()
+    }
+    setSpeakingId(null)
+  }
+
+  const speakText = (rawText: string, msgId?: string) => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) {
+      return
+    }
+
+    // Cancel any current audio speech
+    window.speechSynthesis.cancel()
+
+    const clean = cleanTextForSpeech(rawText)
+    if (!clean) return
+
+    setSpeakingId(msgId || 'active')
+
+    const utterance = new SpeechSynthesisUtterance(clean)
+    utterance.lang = 'en-US'
+    utterance.pitch = 1.0
+    utterance.rate = 0.95 // Natural, friendly, clear conversational pace
+
+    // Choose natural, high-clarity voice
+    const voices = window.speechSynthesis.getVoices()
+    const preferredVoice =
+      voices.find((v) => v.lang.startsWith('en') && (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Online') || v.name.includes('Samantha') || v.name.includes('Jenny') || v.name.includes('Zira'))) ||
+      voices.find((v) => v.lang.startsWith('en-US') || v.lang.startsWith('en-IN') || v.lang.startsWith('en-GB') || v.lang.startsWith('en')) ||
+      voices[0]
+
+    if (preferredVoice) {
+      utterance.voice = preferredVoice
+    }
+
+    utterance.onend = () => {
+      setSpeakingId(null)
+    }
+
+    utterance.onerror = () => {
+      setSpeakingId(null)
+    }
+
+    window.speechSynthesis.speak(utterance)
+  }
+
+  // Cancel speech when leaving or unmounting
+  useEffect(() => {
+    return () => {
+      if (typeof window !== 'undefined' && window.speechSynthesis) {
+        window.speechSynthesis.cancel()
+      }
+    }
+  }, [])
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const cameraInputRef = useRef<HTMLInputElement>(null)
@@ -318,6 +404,11 @@ export default function EggAIChatPage() {
         )
       )
 
+      // Auto-narrate reply in voice if autoVoice is enabled
+      if (autoVoice && reply) {
+        speakText(reply, loadingMsg.id)
+      }
+
       // Refresh chat history in background so today's history is up to date
       fetchChatHistory()
     } catch (err: any) {
@@ -369,6 +460,31 @@ export default function EggAIChatPage() {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {/* Voice Auto-Narrate Toggle */}
+          <button
+            type="button"
+            className={`btn btn-sm ${autoVoice ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => {
+              const next = !autoVoice
+              setAutoVoice(next)
+              localStorage.setItem('egg_ai_auto_voice', String(next))
+              if (!next) stopSpeaking()
+            }}
+            title={autoVoice ? 'Voice narration is ON (Click to Mute)' : 'Voice narration is OFF (Click to Unmute)'}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              fontWeight: 600,
+              background: autoVoice ? 'linear-gradient(135deg, #10b981, #059669)' : undefined,
+              borderColor: autoVoice ? '#10b981' : undefined,
+              color: autoVoice ? '#fff' : undefined,
+            }}
+          >
+            {autoVoice ? <Volume2 size={15} /> : <VolumeX size={15} />}
+            <span>{autoVoice ? 'Voice: ON' : 'Voice: OFF'}</span>
+          </button>
+
           {/* History Button */}
           <button
             className="btn btn-secondary btn-sm"
@@ -529,6 +645,49 @@ export default function EggAIChatPage() {
                   renderFormattedMessage(msg.text, msg.role === 'user')
                 )}
               </div>
+
+              {/* Voice action button (assistant only) */}
+              {msg.role === 'assistant' && !msg.loading && msg.text && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: -2 }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (speakingId === msg.id) {
+                        stopSpeaking()
+                      } else {
+                        speakText(msg.text, msg.id)
+                      }
+                    }}
+                    title={speakingId === msg.id ? 'Stop speaking' : 'Listen to this reply aloud'}
+                    style={{
+                      background: speakingId === msg.id ? 'rgba(239,68,68,0.15)' : 'rgba(255,255,255,0.06)',
+                      border: speakingId === msg.id ? '1px solid #ef4444' : '1px solid var(--border-subtle)',
+                      borderRadius: 14,
+                      padding: '3px 10px',
+                      fontSize: '0.74rem',
+                      color: speakingId === msg.id ? '#ef4444' : 'var(--text-secondary)',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 5,
+                      fontWeight: 600,
+                      transition: 'all 0.2s',
+                    }}
+                  >
+                    {speakingId === msg.id ? (
+                      <>
+                        <VolumeX size={13} color="#ef4444" />
+                        <span>Stop Voice</span>
+                      </>
+                    ) : (
+                      <>
+                        <Volume2 size={13} color="var(--brand-400, #38bdf8)" />
+                        <span>Listen Voice</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
 
               {/* Structured analysis panel (assistant only) */}
               {msg.analysis && !msg.loading && (
@@ -1063,27 +1222,57 @@ export default function EggAIChatPage() {
                             {renderFormattedMessage(conv.assistant_reply)}
                           </div>
 
-                          {/* Load into Chat action */}
-                          <button
-                            type="button"
-                            onClick={() => handleLoadConversation(conv)}
-                            style={{
-                              alignSelf: 'flex-start',
-                              background: 'none',
-                              border: 'none',
-                              cursor: 'pointer',
-                              color: 'var(--brand-400)',
-                              fontSize: '0.75rem',
-                              fontWeight: 600,
-                              padding: '2px 0',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: 4,
-                            }}
-                          >
-                            <Sparkles size={12} />
-                            Load into chat view
-                          </button>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                            {/* Load into Chat action */}
+                            <button
+                              type="button"
+                              onClick={() => handleLoadConversation(conv)}
+                              style={{
+                                alignSelf: 'flex-start',
+                                background: 'none',
+                                border: 'none',
+                                cursor: 'pointer',
+                                color: 'var(--brand-400)',
+                                fontSize: '0.75rem',
+                                fontWeight: 600,
+                                padding: '2px 0',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 4,
+                              }}
+                            >
+                              <Sparkles size={12} />
+                              Load into chat view
+                            </button>
+
+                            {/* Listen Voice action */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (speakingId === conv.id) {
+                                  stopSpeaking()
+                                } else {
+                                  speakText(conv.assistant_reply, conv.id)
+                                }
+                              }}
+                              style={{
+                                alignSelf: 'flex-start',
+                                background: 'none',
+                                border: 'none',
+                                cursor: 'pointer',
+                                color: speakingId === conv.id ? '#ef4444' : 'var(--text-secondary)',
+                                fontSize: '0.75rem',
+                                fontWeight: 600,
+                                padding: '2px 0',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 4,
+                              }}
+                            >
+                              {speakingId === conv.id ? <VolumeX size={12} /> : <Volume2 size={12} />}
+                              <span>{speakingId === conv.id ? 'Stop Voice' : 'Listen Voice'}</span>
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>
