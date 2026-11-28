@@ -17,11 +17,11 @@ const navItems = [
   { group: 'Management', items: [
     { to: '/users', label: 'Users', icon: Users, adminOnly: true },
     { to: '/devices', label: 'Devices', icon: Smartphone, adminOnly: true },
+    { to: '/egg-ai-chat', label: 'AI Vision Chat', icon: MessageCircle },
   ]},
   { group: 'Verification', items: [
     { to: '/ai-verification', label: 'AI Verification', icon: Cpu, hideFromRestricted: true },
     { to: '/egg-counter', label: 'Egg Counter', icon: CheckSquare },
-    { to: '/egg-ai-chat', label: 'AI Vision Chat', icon: MessageCircle },
     { to: '/hen-comb-tracking', label: 'Hen Comb Tracking', icon: Layers },
     { to: '/blockchain', label: 'Blockchain', icon: Blocks, hideFromRestricted: true },
   ]},

@@ -1515,10 +1515,10 @@ export default function HenCombTrackingPage() {
           </div>
 
           <h2 style={{ fontSize: '2.5rem', fontWeight: 900, marginBottom: 8, color: '#0f172a', letterSpacing: '-0.025em', textShadow: '0 2px 10px rgba(255, 255, 255, 0.85)' }}>
-            Hen & Flock Counting
+            Hens Counting
           </h2>
           <p style={{ color: '#334155', fontSize: '1.05rem', maxWidth: 660, margin: '0 auto', fontWeight: 600, textShadow: '0 1px 4px rgba(255, 255, 255, 0.9)' }}>
-            Real-time poultry farm vision AI tracking & automatic flock counting
+            Real-time poultry farm vision AI tracking & automatic counting
           </p>
         </div>
 
