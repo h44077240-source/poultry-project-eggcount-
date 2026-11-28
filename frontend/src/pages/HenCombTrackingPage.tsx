@@ -1836,6 +1836,7 @@ export default function HenCombTrackingPage() {
 
       {/* ─── Daily Flock Summary Cards (Date-wise Total Hens) ─── */}
       <div
+        className="hen-summary-cards-grid"
         style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
@@ -2087,10 +2088,10 @@ export default function HenCombTrackingPage() {
         </div>
       ) : (
         /* ─── 2. Stream Player View with Side-by-Side Live Dashboard ─── */
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 24, alignItems: 'flex-start' }}>
+        <div className="hen-stream-layout" style={{ display: 'flex', flexWrap: 'wrap', gap: 24, alignItems: 'flex-start' }}>
           {/* Left Column: Video Viewport */}
-          <div className="card" style={{ flex: '1 1 540px', minWidth: 320, padding: '24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+          <div className="card hen-video-card" style={{ flex: '1 1 540px', minWidth: 320, padding: '24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div className="hen-video-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <div style={{ width: 14, height: 14, borderRadius: '50%', background: '#ef4444', animation: 'live-pulse 1.2s infinite' }} />
                 <h3 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#10b981', margin: 0 }}>
@@ -2098,7 +2099,7 @@ export default function HenCombTrackingPage() {
                 </h3>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div className="hen-video-controls" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <button
                   type="button"
                   onClick={() => {
@@ -2149,6 +2150,7 @@ export default function HenCombTrackingPage() {
 
             {/* Video Viewport Container */}
             <div
+              className="hen-video-viewport"
               style={{
                 borderRadius: 16,
                 overflow: 'hidden',
@@ -2219,7 +2221,7 @@ export default function HenCombTrackingPage() {
           </div>
 
           {/* Right Column: Live Count Dashboard */}
-          <div className="card" style={{ flex: '1 1 320px', minWidth: 280, padding: '24px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+          <div className="card hen-dashboard-card" style={{ flex: '1 1 320px', minWidth: 280, padding: '24px', display: 'flex', flexDirection: 'column', gap: 20 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, borderBottom: '1px solid var(--border-subtle, rgba(255,255,255,0.1))', paddingBottom: 14 }}>
               <Activity size={22} color="#10b981" />
               <h3 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
@@ -2230,6 +2232,7 @@ export default function HenCombTrackingPage() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16, flex: 1, justifyContent: 'center' }}>
               {/* Card 1: Total Hens Count */}
               <div
+                className="hen-live-count-card"
                 style={{
                   background: 'linear-gradient(135deg, rgba(16,185,129,0.12) 0%, rgba(5,150,105,0.05) 100%)',
                   border: '2px solid rgba(16,185,129,0.4)',
@@ -2243,7 +2246,7 @@ export default function HenCombTrackingPage() {
                 <div style={{ fontSize: '0.95rem', color: '#6ee7b7', textTransform: 'uppercase', letterSpacing: '1.5px', fontWeight: 700, marginBottom: 8 }}>
                   Total Hens (Live)
                 </div>
-                <div style={{ fontSize: '5.2rem', fontWeight: 900, color: '#10b981', lineHeight: 1, textShadow: '0 0 25px rgba(16,185,129,0.4)' }}>
+                <div className="hen-live-counter" style={{ fontSize: '5.2rem', fontWeight: 900, color: '#10b981', lineHeight: 1, textShadow: '0 0 25px rgba(16,185,129,0.4)' }}>
                   {totalCount}
                 </div>
                 <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary, #94a3b8)', marginTop: 8, fontWeight: 500 }}>

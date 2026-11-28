@@ -212,7 +212,7 @@ export default function DashboardPage() {
             No egg counting sessions saved yet. Run Egg Counter to detect and log daily tray & egg totals.
           </div>
         ) : (
-          <div style={{ padding: '20px 24px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 14 }}>
+          <div className="poultry-daily-grid" style={{ padding: '20px 24px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 14 }}>
             {dailyEggs.map((day) => {
               const isToday = day.date === todayKey;
               const hasMissing = (day.missing_eggs || 0) > 0;
@@ -311,7 +311,7 @@ export default function DashboardPage() {
             No hen counting sessions saved yet. Run Hen Counting to log verified flock counts.
           </div>
         ) : (
-          <div style={{ padding: '20px 24px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
+          <div className="poultry-daily-grid" style={{ padding: '20px 24px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
             {dailyHens.map((day) => {
               const isToday = day.date === new Date().toISOString().slice(0, 10);
               return (

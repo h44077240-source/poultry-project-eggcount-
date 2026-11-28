@@ -1109,10 +1109,11 @@ export default function EggCounterPage() {
       </header>
 
       {/* ─── Settings Bar ───────────────────────────────────────────────── */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 24, marginBottom: 24 }}>
+      <div className="egg-counter-settings-bar" style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginBottom: 20 }}>
         
         {/* Mode Toggle */}
         <div
+          className="egg-counter-mode-toggle"
           style={{
             display: 'flex',
             gap: 8,
@@ -1147,6 +1148,7 @@ export default function EggCounterPage() {
 
       {/* Target Toggle */}
       <div
+        className="egg-counter-target-toggle"
         style={{
           display: 'flex',
           gap: 8,
