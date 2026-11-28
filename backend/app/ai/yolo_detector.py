@@ -62,14 +62,36 @@ class CustomYOLODetector(ImageDetector):
 
     def chat_analyze(self, message: str, image_bytes: Optional[bytes], mime_type: str = "image/jpeg") -> dict:
         """
-        Conversational chat analysis. Since YOLO is not a LLM, we return a canned response with counts.
+        Conversational chat analysis using live farm database intelligence and YOLO counts.
         """
-        if image_bytes:
-            analysis = self.analyze(image_bytes, mime_type)
-            reply = f"Based on the image, I counted {analysis['tray_count']} egg tray(s) ({analysis['egg_count']} eggs) and {analysis['hen_count']} hens using our trained YOLO model."
-            return {"reply": reply, "analysis": analysis}
-        else:
-            return {"reply": "I'm a local object detection model. Please upload an image for me to count eggs or trays.", "analysis": None}
+        try:
+            from app.database.session import SessionLocal
+            from app.ai.farm_chat_service import get_live_farm_data, rule_based_fallback_chat
+            db = SessionLocal()
+            try:
+                farm_data = get_live_farm_data(db)
+            finally:
+                db.close()
+
+            structured_analysis = None
+            prefix = ""
+            if image_bytes:
+                structured_analysis = self.analyze(image_bytes, mime_type, target="trays")
+                prefix = (
+                    f"Visual Detection Summary from uploaded image:\n"
+                    f"• 📦 Egg Trays: **{structured_analysis.get('tray_count', 0)} trays**\n"
+                    f"• 🥚 Eggs: **{structured_analysis.get('egg_count', 0)} eggs**\n"
+                    f"• 🐔 Hens: **{structured_analysis.get('hen_count', 0)} hens**\n\n"
+                )
+            
+            data_reply = rule_based_fallback_chat(message, farm_data)
+            return {"reply": prefix + data_reply, "analysis": structured_analysis}
+        except Exception as exc:
+            logger.error("YOLO chat_analyze fallback error: %s", exc)
+            return {
+                "reply": "Hello! I am your KR Poultry AI Assistant. Please ask any question about today's egg counts, tray counts, hen tracking, or suspicious uploads.",
+                "analysis": None
+            }
             
     def analyze_dual(self, top_image_bytes: bytes, side_image_bytes: bytes, mime_type_top: str = "image/jpeg", mime_type_side: str = "image/jpeg", target: str = "trays") -> dict:
         """

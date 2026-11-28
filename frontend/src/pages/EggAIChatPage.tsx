@@ -59,7 +59,7 @@ export default function EggAIChatPage() {
       id: uid(),
       role: 'assistant',
       text:
-        '👋 Vanakkam bro! I\'m your KR Poultry Farm & Evidence AI Assistant.\n\nEnkitta namma farm live data & reports pathi enna venumnalum kelunga:\n• "Today egg count evolo?"\n• "Total hens & today hen count evolo?"\n• "Yaru suspicious evidence upload panniruka?"\n• "27 Nov egg and tray report kudu bro"\n• "All farm reports summary thanga"\n\nKoodave egg trays or hen photos upload panna, live-aa detect panni accurate count-um solluven! 🥚🐔📊',
+        '👋 Hello! I am your KR Poultry Farm & Evidence AI Assistant.\n\nFeel free to ask me anything about our live farm data, counts, and reports:\n• "What is today\'s egg and tray count?"\n• "What is today\'s total hen count?"\n• "Who uploaded suspicious evidence?"\n• "Show me the 27 Nov egg and tray report"\n• "Give me the complete farm summary report"\n\nYou can also upload or capture egg tray or hen photos, and I will detect and count them live for you! 🥚🐔📊',
     },
   ])
 
@@ -493,11 +493,11 @@ export default function EggAIChatPage() {
           }}
         >
           {[
-            { label: '🥚 Today Egg Count', query: 'Today egg count evolo bro?' },
-            { label: '🐔 Today Hen Count', query: 'Today hen count evolo bro?' },
-            { label: '⚠️ Suspicious Evidence', query: 'Yaru yaru upload panna image suspicious-aa irukku?' },
-            { label: '📊 All Reports Summary', query: 'Give me complete farm report summary bro' },
-            { label: '📅 27 Nov Report', query: '27 Nov egg and hen count report kudu' },
+            { label: '🥚 Today Egg Count', query: "What is today's total egg and tray count?" },
+            { label: '🐔 Today Hen Count', query: "What is today's hen tracking count?" },
+            { label: '⚠️ Suspicious Evidence', query: 'Who uploaded suspicious evidence images and what was flagged?' },
+            { label: '📊 All Reports Summary', query: 'Give me a complete farm report summary' },
+            { label: '📅 27 Nov Report', query: 'What was the egg and hen count on 27 Nov?' },
           ].map((chip) => (
             <button
               key={chip.label}
