@@ -79,9 +79,9 @@ class CustomYOLODetector(ImageDetector):
                 structured_analysis = self.analyze(image_bytes, mime_type, target="trays")
                 prefix = (
                     f"Visual Detection Summary from uploaded image:\n"
-                    f"• 📦 Egg Trays: **{structured_analysis.get('tray_count', 0)} trays**\n"
-                    f"• 🥚 Eggs: **{structured_analysis.get('egg_count', 0)} eggs**\n"
-                    f"• 🐔 Hens: **{structured_analysis.get('hen_count', 0)} hens**\n\n"
+                    f"• Egg Trays: {structured_analysis.get('tray_count', 0)} trays\n"
+                    f"• Eggs: {structured_analysis.get('egg_count', 0)} eggs\n"
+                    f"• Hens: {structured_analysis.get('hen_count', 0)} birds\n\n"
                 )
             
             data_reply = rule_based_fallback_chat(message, farm_data)

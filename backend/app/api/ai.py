@@ -670,6 +670,34 @@ async def chat_analyze(
                 "analysis": None
             }
 
+    # ── Automatically save conversation to AIChatHistory ───────────────────
+    try:
+        import json
+        import uuid
+        from app.database.models import AIChatHistory
+        structured_json = None
+        if result.get("analysis"):
+            try:
+                structured_json = json.dumps(result["analysis"])
+            except Exception:
+                pass
+        
+        chat_rec = AIChatHistory(
+            id=str(uuid.uuid4()),
+            created_at=datetime.utcnow(),
+            user_id=current_user.id if current_user else None,
+            user_name=current_user.full_name if current_user else "User",
+            user_message=message,
+            assistant_reply=result["reply"],
+            has_image=bool(image_bytes),
+            image_filename=image.filename if (image and image.filename) else None,
+            structured_data=structured_json
+        )
+        db.add(chat_rec)
+        db.commit()
+    except Exception as chat_save_err:
+        logger.warning("AIChatHistory save failed: %s", chat_save_err)
+
     return ChatAnalyzeResponse(
         reply=result["reply"],
         analysis=result.get("analysis"),
@@ -971,5 +999,65 @@ def get_egg_sessions_daily_summary(db: Session = Depends(get_db)):
             "notes": s.notes
         })
     return list(day_map.values())
+
+
+# ─── AI Chat History Endpoints ───────────────────────────────────────────────
+from app.database.models import AIChatHistory
+from app.schemas.schemas import AIChatHistoryResponse
+
+@router.get("/chat-history", response_model=list[AIChatHistoryResponse], tags=["Egg Counting"])
+def get_ai_chat_history(limit: int = 100, db: Session = Depends(get_db)):
+    """Retrieve chat history records, newest first."""
+    return db.query(AIChatHistory).order_by(AIChatHistory.created_at.desc()).limit(limit).all()
+
+
+@router.get("/chat-history/daily-summary", tags=["Egg Counting"])
+def get_ai_chat_history_daily(db: Session = Depends(get_db)):
+    """Retrieve chat history grouped day-by-day with dates and messages."""
+    records = db.query(AIChatHistory).order_by(AIChatHistory.created_at.desc()).all()
+    day_map = {}
+    for r in records:
+        date_str = r.created_at.strftime("%Y-%m-%d")
+        formatted = r.created_at.strftime("%d %b %Y (%A)")
+        if date_str not in day_map:
+            day_map[date_str] = {
+                "date": date_str,
+                "formatted_date": formatted,
+                "total_messages": 0,
+                "conversations": []
+            }
+        day_map[date_str]["total_messages"] += 1
+        day_map[date_str]["conversations"].append({
+            "id": r.id,
+            "created_at": r.created_at.isoformat(),
+            "time": r.created_at.strftime("%I:%M %p"),
+            "user_name": r.user_name or "User",
+            "user_message": r.user_message,
+            "assistant_reply": r.assistant_reply,
+            "has_image": r.has_image,
+            "image_filename": r.image_filename,
+            "structured_data": r.structured_data
+        })
+    return list(day_map.values())
+
+
+@router.delete("/chat-history/{record_id}", tags=["Egg Counting"])
+def delete_ai_chat_record(record_id: str, db: Session = Depends(get_db)):
+    """Delete a specific chat history record."""
+    rec = db.query(AIChatHistory).filter(AIChatHistory.id == record_id).first()
+    if not rec:
+        raise HTTPException(status_code=404, detail="Chat record not found")
+    db.delete(rec)
+    db.commit()
+    return {"success": True, "message": "Chat history record deleted"}
+
+
+@router.delete("/chat-history", tags=["Egg Counting"])
+def clear_all_ai_chat_history(db: Session = Depends(get_db)):
+    """Clear all chat history."""
+    db.query(AIChatHistory).delete()
+    db.commit()
+    return {"success": True, "message": "All chat history records cleared"}
+
 
 

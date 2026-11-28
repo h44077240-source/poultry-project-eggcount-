@@ -518,3 +518,17 @@ class EggCountSession(Base):
     notes = Column(Text, nullable=True)
 
 
+class AIChatHistory(Base):
+    __tablename__ = "ai_chat_history"
+    id = Column(String(36), primary_key=True, default=gen_uuid)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    user_name = Column(String(100), nullable=True)
+    user_message = Column(Text, nullable=False)
+    assistant_reply = Column(Text, nullable=False)
+    has_image = Column(Boolean, default=False)
+    image_filename = Column(String(255), nullable=True)
+    structured_data = Column(Text, nullable=True)
+
+
+

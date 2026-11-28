@@ -464,3 +464,21 @@ class EggCountSessionResponse(BaseModel):
         from_attributes = True
 
 
+# ─── AI Chat History ──────────────────────────────────────────────────────────
+
+class AIChatHistoryResponse(BaseModel):
+    id: str
+    created_at: datetime
+    user_id: Optional[str] = None
+    user_name: Optional[str] = None
+    user_message: str
+    assistant_reply: str
+    has_image: bool = False
+    image_filename: Optional[str] = None
+    structured_data: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+

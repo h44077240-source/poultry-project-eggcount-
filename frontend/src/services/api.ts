@@ -136,6 +136,11 @@ export const aiApi = {
   deleteEggSession: (id: string) => api.delete(`/api/ai/egg-sessions/${id}`),
   clearEggSessions: () => api.delete('/api/ai/egg-sessions'),
   getEggDailySummary: () => api.get('/api/ai/egg-sessions/daily-summary'),
+  /** AI Vision Chat History (Day-by-Day Saved Logs) */
+  getChatHistory: (limit = 100) => api.get(`/api/ai/chat-history?limit=${limit}`),
+  getChatHistoryDaily: () => api.get('/api/ai/chat-history/daily-summary'),
+  deleteChatHistory: (id: string) => api.delete(`/api/ai/chat-history/${id}`),
+  clearChatHistory: () => api.delete('/api/ai/chat-history'),
 }
 
 // ─── Blockchain ───────────────────────────────────────────────────────────────

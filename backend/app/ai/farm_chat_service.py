@@ -279,7 +279,7 @@ def rule_based_fallback_chat(message: str, data: Dict[str, Any]) -> str:
     """
     Intelligent conversational fallback responder.
     Provides 100% accurate, friendly answers in English from live database facts
-    even if the external cloud LLM is offline, unconfigured, or rate-limited.
+    without raw asterisks or markdown clutter.
     """
     msg = message.lower().strip()
 
@@ -287,17 +287,17 @@ def rule_based_fallback_chat(message: str, data: Dict[str, Any]) -> str:
     if any(k in msg for k in ("suspicious", "susuplise", "sus", "anomal", "fake", "tamper", "fraud", "flagged")):
         if data["suspicious_evidence"] == 0:
             return (
-                "Great news! Currently, there are **no suspicious evidence records** in the system (0 suspicious). "
-                f"Out of {data['total_evidence']} total evidence files, **{data['verified_evidence']} files have been successfully verified** by our inspection officers. "
-                "All evidence records are clean and verified! 👍"
+                "Great news! Currently, there are no suspicious evidence records in the system (0 suspicious). "
+                f"Out of {data['total_evidence']} total evidence files, all {data['verified_evidence']} verified files have passed quality inspection. "
+                "All evidence records are clean and verified!"
             )
         items_str = ""
         for i, item in enumerate(data["suspicious_items"][:5], 1):
-            items_str += f"\n{i}. **Officer {item['uploaded_by']}** ({item['user_role']})\n   • File: `{item['filename']}`\n   • Date: {item['date']}\n   • Flag Reason: {item['reason']}\n"
+            items_str += f"\n  {i}. Officer {item['uploaded_by']} ({item['user_role']}) - File: {item['filename']} on {item['date']} (Reason: {item['reason']})"
         return (
-            f"Here is the suspicious evidence audit from our database:\nTotal Flagged: **{data['suspicious_evidence']} suspicious evidence files**.\n\n"
-            f"**Flagged Upload Details & Officers:**{items_str}\n"
-            f"**Total System Evidence:** {data['total_evidence']} | Verified: {data['verified_evidence']} | Pending: {data['pending_evidence']}.\n"
+            f"Here is the suspicious evidence audit from our database:\nTotal Flagged: {data['suspicious_evidence']} suspicious evidence files.\n\n"
+            f"Flagged Upload Details & Officers:{items_str}\n\n"
+            f"Total System Evidence: {data['total_evidence']} (Verified: {data['verified_evidence']}, Pending: {data['pending_evidence']}).\n"
             "Please let me know if you would like detailed audit logs for any specific evidence ID!"
         )
 
@@ -305,20 +305,20 @@ def rule_based_fallback_chat(message: str, data: Dict[str, Any]) -> str:
     if (("who" in msg or "yaru" in msg or "yar" in msg) and ("upload" in msg or "verified" in msg or "image" in msg)) or ("officer" in msg and "upload" in msg):
         verified_lines = ""
         for name, cnt in data["user_verified_map"].items():
-            verified_lines += f"\n• **{name}**: {cnt} verified evidence files"
+            verified_lines += f"\n• {name}: {cnt} verified evidence files"
         if not verified_lines:
             verified_lines = "\n• Currently no verified evidence recorded."
         
         susp_summary = ""
         if data["suspicious_items"]:
-            susp_summary = f"\n\n⚠️ **Suspicious Uploads Flagged:**\n"
+            susp_summary = f"\n\nFlagged Uploads:\n"
             for s in data["suspicious_items"][:4]:
-                susp_summary += f"• **Officer {s['uploaded_by']}** — `{s['filename']}` ({s['date']})\n"
+                susp_summary += f"• Officer {s['uploaded_by']} - {s['filename']} ({s['date']})\n"
 
         return (
             f"Here is the evidence upload and verification summary by officer:\n\n"
-            f"✅ **Verified Uploads by Officer:**{verified_lines}{susp_summary}\n\n"
-            f"**Total System Evidence:** **{data['total_evidence']}** "
+            f"Verified Uploads by Officer:{verified_lines}{susp_summary}\n\n"
+            f"Total System Evidence: {data['total_evidence']} "
             f"({data['verified_evidence']} verified, {data['suspicious_evidence']} suspicious, {data['pending_evidence']} pending)."
         )
 
@@ -330,15 +330,15 @@ def rule_based_fallback_chat(message: str, data: Dict[str, Any]) -> str:
         if (day_num in msg and month_name in msg) or date_key in msg:
             hen_info = data["hen_by_date"].get(date_key, {"total_hens": 0, "sessions_count": 0})
             return (
-                f"Here are the farm records for **{info['formatted']}**:\n\n"
-                f"🥚 **Egg & Tray Inventory:**\n"
-                f"• Verified Total Eggs: **{info['total_eggs']:,} eggs**\n"
-                f"• Total Trays: **{info['total_trays']} trays**\n"
-                f"• Deductions (Missing Eggs): **{info['missing_eggs']} eggs**\n"
-                f"• Batches Scanned: **{info['batches']} sessions**\n\n"
-                f"🐔 **Hen Tracking:**\n"
-                f"• Total Hens Identified: **{hen_info['total_hens']:,} hens**\n"
-                f"• Tracking Sessions: **{hen_info['sessions_count']} sessions**\n\n"
+                f"Here are the farm records for {info['formatted']}:\n\n"
+                f"Egg & Tray Inventory:\n"
+                f"• Verified Total Eggs: {info['total_eggs']:,} eggs\n"
+                f"• Total Trays: {info['total_trays']} trays\n"
+                f"• Deductions (Missing Eggs): {info['missing_eggs']} eggs\n"
+                f"• Batches Scanned: {info['batches']} sessions\n\n"
+                f"Hen Tracking:\n"
+                f"• Total Hens Identified: {hen_info['total_hens']:,} birds\n"
+                f"• Tracking Sessions: {hen_info['sessions_count']} sessions\n\n"
                 "All records are saved securely in the database. Feel free to ask about any other date!"
             )
 
@@ -349,67 +349,66 @@ def rule_based_fallback_chat(message: str, data: Dict[str, Any]) -> str:
             info = data["egg_by_date"][yesterday_utc]
             hen_info = data["hen_by_date"].get(yesterday_utc, {"total_hens": 0, "sessions_count": 0})
             return (
-                f"Here is the farm report for **Yesterday ({info['formatted']})**:\n\n"
-                f"🥚 **Eggs & Trays:** **{info['total_eggs']:,} eggs** ({info['total_trays']} trays)\n"
-                f"⚠️ **Deductions:** {info['missing_eggs']} missing eggs\n"
-                f"🐔 **Hens:** **{hen_info['total_hens']:,} hens** ({hen_info['sessions_count']} tracking sessions)\n\n"
+                f"Here is the farm report for Yesterday ({info['formatted']}):\n\n"
+                f"• Eggs & Trays: {info['total_eggs']:,} eggs across {info['total_trays']} trays\n"
+                f"• Deductions: {info['missing_eggs']} missing eggs\n"
+                f"• Hens Tracked: {hen_info['total_hens']:,} birds across {hen_info['sessions_count']} tracking sessions\n\n"
                 "All yesterday's batch and tracking data are logged in the database!"
             )
         else:
             return (
                 "No egg or hen count sessions were recorded yesterday in the database. "
-                "You can specify a date to check previous records (for example, '27 Nov report')!"
+                "You can specify a date to check previous records, for example: '27 Nov report'!"
             )
 
     # ── 4. Egg & Tray Count (Today / General) ──────────────────────────────────
     if any(k in msg for k in ("egg", "tray", "muttai")) and any(k in msg for k in ("count", "evolo", "evlo", "total", "today", "inniku", "how many", "status", "inventory", "stock")):
         return (
-            f"Here is the live egg inventory report for **Today ({data['today_ist']})**:\n\n"
-            f"🥚 **Today's Verified Eggs:** **{data['today_eggs']:,} eggs**\n"
-            f"📦 **Today's Total Trays:** **{data['today_trays']} trays**\n"
-            f"⚠️ **Deductions (Missing Eggs):** **{data['today_missing']} eggs**\n"
-            f"🔍 **Batches Scanned:** {data['today_egg_batches']} sessions\n\n"
-            f"📊 **All-Time Egg Inventory:** **{data['total_eggs_all_time']:,} eggs** ({data['total_trays_all_time']} trays).\n"
+            f"Here is today's live egg inventory report for {data['today_ist']}:\n\n"
+            f"• Today's Verified Eggs: {data['today_eggs']:,} eggs\n"
+            f"• Today's Total Trays: {data['today_trays']} trays\n"
+            f"• Deductions (Missing Eggs): {data['today_missing']} eggs\n"
+            f"• Batches Scanned Today: {data['today_egg_batches']} session(s)\n\n"
+            f"• All-Time Egg Inventory: {data['total_eggs_all_time']:,} eggs across {data['total_trays_all_time']} trays.\n\n"
             "Please let me know if you would like data for a specific date or batch!"
         )
 
     # ── 5. Hen & Flock Count (Today / General) ─────────────────────────────────
     if any(k in msg for k in ("hen", "koli", "kozhi", "flock", "comb")) and any(k in msg for k in ("count", "evolo", "evlo", "total", "today", "inniku", "how many", "status")):
         return (
-            f"Here is the live hen tracking report for **Today ({data['today_ist']})**:\n\n"
-            f"🐔 **Today's Unique Hens Tagged:** **{data['today_hens']:,} hens**\n"
-            f"📹 **Video Tracking Sessions:** {data['today_hen_sessions']} runs\n"
-            f"🏆 **All-Time Hens Counted:** **{data['total_hens_all_time']:,} hens**\n\n"
+            f"Here is today's live hen tracking report for {data['today_ist']}:\n\n"
+            f"• Today's Unique Hens Tagged: {data['today_hens']:,} birds\n"
+            f"• Video Tracking Sessions: {data['today_hen_sessions']} runs\n"
+            f"• All-Time Hens Counted: {data['total_hens_all_time']:,} birds\n\n"
             "The sequence tracking model tagged each unique hen and logged it directly to the dashboard!"
         )
 
     # ── 6. Full Executive Report / All Data ────────────────────────────────────
     if any(w in msg for w in ("report", "elareportum", "all", "summary", "overview", "dashboard", "status")):
         return (
-            f"Here is the complete **KR Group Poultry Farm Executive Summary**:\n\n"
-            f"📅 **Date:** {data['today_ist']}\n\n"
-            f"🥚 **EGG INVENTORY:**\n"
-            f"• Today's Verified Eggs: **{data['today_eggs']:,} eggs** ({data['today_trays']} trays)\n"
-            f"• Today's Missing (Deductions): **{data['today_missing']} eggs**\n"
-            f"• Total Scanned Eggs (All-Time): **{data['total_eggs_all_time']:,} eggs**\n\n"
-            f"🐔 **HEN TRACKING:**\n"
-            f"• Today's Unique Hens: **{data['today_hens']:,} hens**\n"
-            f"• Total Hens Tracked (All-Time): **{data['total_hens_all_time']:,} hens**\n\n"
-            f"🛡️ **SECURITY & EVIDENCE AUDIT:**\n"
-            f"• Total Uploaded Evidence: **{data['total_evidence']}**\n"
-            f"• Verified Evidence: **{data['verified_evidence']}**\n"
-            f"• Suspicious Evidence: **{data['suspicious_evidence']}**\n"
-            f"• Pending Verification: **{data['pending_evidence']}**\n\n"
+            f"Here is the complete KR Group Poultry Farm Executive Summary for {data['today_ist']}:\n\n"
+            f"Egg Inventory:\n"
+            f"• Today's Verified Eggs: {data['today_eggs']:,} eggs ({data['today_trays']} trays)\n"
+            f"• Today's Missing (Deductions): {data['today_missing']} eggs\n"
+            f"• Total Scanned Eggs (All-Time): {data['total_eggs_all_time']:,} eggs\n\n"
+            f"Hen Tracking:\n"
+            f"• Today's Unique Hens: {data['today_hens']:,} birds\n"
+            f"• Total Hens Tracked (All-Time): {data['total_hens_all_time']:,} birds\n\n"
+            f"Security & Evidence Audit:\n"
+            f"• Total Uploaded Evidence: {data['total_evidence']}\n"
+            f"• Verified Evidence: {data['verified_evidence']}\n"
+            f"• Suspicious Evidence: {data['suspicious_evidence']}\n"
+            f"• Pending Verification: {data['pending_evidence']}\n\n"
             "You can ask me about any specific date, batch, or officer upload at any time!"
         )
 
     # ── 7. Greetings / Default Warm Response ──────────────────────────────────
     return (
-        f"Hello! 👋 I am your KR Poultry Farm AI Assistant.\n\n"
-        f"Here is the current live summary for **Today ({data['today_ist']})**:\n"
-        f"• 🥚 **Today's Eggs:** **{data['today_eggs']:,} eggs** ({data['today_trays']} trays)\n"
-        f"• 🐔 **Today's Hens:** **{data['today_hens']:,} hens**\n"
-        f"• 🛡️ **Evidence Status:** **{data['verified_evidence']} verified** / **{data['suspicious_evidence']} suspicious**\n\n"
+        f"Hello! I am your KR Poultry Farm AI Assistant.\n\n"
+        f"Here is the current live summary for Today ({data['today_ist']}):\n"
+        f"• Today's Eggs: {data['today_eggs']:,} eggs ({data['today_trays']} trays)\n"
+        f"• Today's Hens: {data['today_hens']:,} birds\n"
+        f"• Evidence Status: {data['verified_evidence']} verified / {data['suspicious_evidence']} suspicious\n\n"
         "Feel free to ask me any question about daily egg counts, hen flock tracking, suspicious uploads, or date-wise records. "
         "You can also upload an image for real-time visual analysis!"
     )
